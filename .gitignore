@@ -1,0 +1,7 @@
+data/
+*.csv
+*.parquet
+__pycache__/
+.DS_Store
+models/*.pkl
+models/*.h5
