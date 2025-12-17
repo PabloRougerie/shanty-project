@@ -80,7 +80,7 @@ I analyzed AIS tracking data from ~1000 cargo and tanker vessels in the Gulf of 
 
 ![Tuning Impact](visualizations/tuning_impact.png)
 
-*Model performance vs prediction horizon showing baseline, Ridge, LightGBM (not tuned), and LightGBM (tuned). The graph illustrates the impact of hyperparameter tuning and the "tipping point" where ML models become valuable.*
+*Model performance vs prediction horizon showing baseline, Ridge, LightGBM (not tuned), and LightGBM (tuned). The graph illustrates the impact of hyperparameter tuning and the "tipping point" where ML models become valuable. (Note: Generate this image by running notebook 6)*
 
 ### 3.3 Detailed Performance Comparison
 
