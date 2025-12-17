@@ -17,7 +17,7 @@ This project aims to predict the future position of maritime vessels using AIS (
 
 **Study Area**: Gulf of Mexico, December 2024
 
-![Study Area](visualizations/Capture%20d'écran%202025-12-14%20à%2020.16.02.png)
+![Study Area](visualizations/map.png)
 
 *Geographic area selected for analysis: Gulf of Mexico*
 
