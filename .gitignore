@@ -1,7 +1,14 @@
+# Data files
 data/
 *.csv
 *.parquet
+
+# Python cache
 __pycache__/
+*.pyc
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS files
 .DS_Store
-models/*.pkl
-models/*.h5

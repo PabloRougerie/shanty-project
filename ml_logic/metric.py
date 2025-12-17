@@ -5,14 +5,16 @@ from sklearn.metrics import make_scorer
 
 def haversine_distance(LAT_true, LON_true, LAT_pred, LON_pred):
     """
-    Calculate great-circle distance between two points Haversine formula.
+    Calculate great-circle distance between two points using Haversine formula.
 
     Parameters:
     LAT_true, LON_true : array. True latitude and longitude coordinates in degrees
     LAT_pred, LON_pred : array. Predicted latitude and longitude coordinates in degrees
 
     Returns:
-    float: Great-circle distance in kilometers
+    --------
+    float or array-like
+        Great-circle distance in kilometers
     """
     earth_radius = 6371  # Earth mean radius in kilometers
 
@@ -27,9 +29,11 @@ def haversine_distance(LAT_true, LON_true, LAT_pred, LON_pred):
     d_LON = LON_pred_rad - LON_true_rad
 
     # Haversine formula
-    a = (np.sin(d_LAT / 2.0)**2 + np.cos(LAT_true_rad)*np.cos(LAT_pred_rad)*np.sin(d_LON/2.0)**2)
-    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1-a))  # Angular distance in radians
+    a = (np.sin(d_LAT / 2.0)**2 +
+         np.cos(LAT_true_rad) * np.cos(LAT_pred_rad) * np.sin(d_LON / 2.0)**2)
+    c = 2 * np.arctan2(np.sqrt(a), np.sqrt(1 - a))  # Angular distance in radians
     d = c * earth_radius  # Convert to kilometers
+
     return d
 
 
@@ -48,44 +52,48 @@ def haversine_mae(y_true, y_pred):
     Returns:
     float: Mean Absolute Error in kilometers
     """
-
-    #make sure we're converting in numpy
-    y_true= np.asarray(y_true)
+    # Make sure we're converting to numpy
+    y_true = np.asarray(y_true)
     y_pred = np.asarray(y_pred)
+
     # Calculate haversine distance for each prediction
-    mae = np.mean(abs(haversine_distance(y_true[:,0],
-                                         y_true[:,1],
-                                         y_pred[:,0],
-                                         y_pred[:,1]) ))
+    distances = haversine_distance(
+        y_true[:, 0], y_true[:, 1],
+        y_pred[:, 0], y_pred[:, 1])
+
+    mae = np.mean(np.abs(distances))
+
     return mae
 
-# Create sklearn-compatible scorer
+# Create  scorer
 haversine_scorer = make_scorer(haversine_mae, greater_is_better= False)
 
 
-def position_extrapolation(df: pd.DataFrame, time_horizon):
+def position_extrapolation(df, time_horizon):
     """
-    Naive baseline: extrapolate position at time t+ time_horizon based on
+    Naive baseline: extrapolate position at time t + time_horizon based on
     linear displacement between time t - time_horizon and t.
 
     Assumes constant velocity: future_displacement = past_displacement
-    Mathematically: position(t+time horizon) = position(t) + [position(t) - position(t-time horizon)]
+    Mathematically: position(t + horizon) = position(t) + [position(t) - position(t - horizon)]
 
     Parameters:
-    -----------
+
     df : DataFrame
-        Must contain columns: LAT, LON, "LAT_lag_{time_horizon*5}min", LON_lag_{time_horizon*5}min"
+        Must contain columns: LAT, LON, LAT_lag_{time_horizon}min, LON_lag_{time_horizon}min
+    time_horizon : int
+        Prediction horizon in minutes (must match the lag column names)
 
     Returns:
     --------
     LAT_pred, LON_pred : Series
-        Predicted latitude and longitude 30 minutes ahead
+        Predicted latitude and longitude at time t + time_horizon
     """
-    # Calculate displacement over the last 30 minutes
-    dLAT = df["LAT"] - df[f"LAT_lag_{time_horizon*5}min"]
-    dLON = df["LON"] - df[f"LON_lag_{time_horizon*5}min"]
+    # Calculate displacement over the last time_horizon minutes
+    dLAT = df["LAT"] - df[f"LAT_lag_{time_horizon}min"]
+    dLON = df["LON"] - df[f"LON_lag_{time_horizon}min"]
 
-    # Extrapolate: assume same displacement for next 30 minutes
+    # Extrapolate: assume same displacement for next time_horizon minutes
     LAT_pred = df["LAT"] + dLAT
     LON_pred = df["LON"] + dLON
 
