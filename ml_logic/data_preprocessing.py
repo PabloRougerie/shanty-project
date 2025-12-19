@@ -9,6 +9,9 @@ import zipfile
 import os
 
 
+from sklearn.model_selection import GroupShuffleSplit
+
+
 
 def download_source_files(start_date: str, end_date, lon_west, lon_east, lat_north, lat_south, output_path= "../data/"):
     """
@@ -105,8 +108,6 @@ def download_source_files(start_date: str, end_date, lon_west, lon_east, lat_nor
     gc.collect()
 
 
-
-
 def get_raw_data(target_path, source_path= "../data/raw/AIS_.csv"):
     """ get the raw csv file, select relevant columns,
     restrict to cargo and tanker tracks,
@@ -122,7 +123,6 @@ def get_raw_data(target_path, source_path= "../data/raw/AIS_.csv"):
     df_reduced.to_parquet()
     del df_raw
     gc.collect()
-
 
 
 def clean_data(df):
@@ -165,73 +165,221 @@ def resample_pings(df, interval='5min'):
     return df
 
 
-def create_time_window(X: pd.DataFrame, y: pd.Series, size= 50):
-
-    """
-    Splits the input DataFrame X and Series y into overlapping time windows of a given size.
-    The split has to make sure that time sequences of separate vessels aren't mixed
+def create_target(df: pd.DataFrame, horizon: int):
+    """Create target columns by forward-shifting LAT and LON for each vessel.
 
     Parameters:
     -----------
-    X : pd.DataFrame
-        Feature data to be windowed.
-    y : pd.Series
-        Target variable to be windowed.
-    size : int
-        Length of each time window in time steps (5min by default).
+    df : pd.DataFrame
+        DataFrame with columns MMSI, BaseDateTime, LAT, LON
+    horizon : int
+        Number of time steps to shift forward (prediction horizon)
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with added target_LAT and target_LON columns, rows with NaN targets removed
+    """
+
+    required_cols = ["MMSI", "BaseDateTime", "LAT", "LON"]
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    #sort by vessels and time
+    df = df.sort_values(by=["MMSI", "BaseDateTime"], ascending=True)
+
+    #create target columns by shifting forward the LAT and LON
+    df['target_LAT'] = df.groupby('MMSI')['LAT'].shift(-horizon)
+    df['target_LON'] = df.groupby('MMSI')['LON'].shift(-horizon)
+
+    #clean rows with Nan
+    df = df.dropna(axis= 0)
+
+    return df
+
+def vessel_train_test_split(df, test_size, random_state = 273):
+    """Split dataset by vessel groups to ensure no vessel appears in both train and test.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        DataFrame with MMSI column
+    test_size : float
+        Proportion of vessels (not rows) to put in test set
+    random_state : int, optional
+        Random seed for reproducibility
+
+    Returns:
+    --------
+    tuple
+        (df_train, df_test, groups_train, groups_test)
+    """
+    if "MMSI" not in df.columns:
+        raise ValueError("DataFrame must contain 'MMSI' column")
+
+    groups = df["MMSI"]
+    gss = GroupShuffleSplit(n_splits= 1, test_size= test_size, random_state= random_state)
+    for train_idx, test_idx in gss.split(df, y= None, groups= groups):
+        df_train, df_test = df.iloc[train_idx], df.iloc[test_idx]
+
+        groups_train = groups.iloc[train_idx]
+        groups_test = groups.iloc[test_idx]
+
+    return df_train, df_test, groups_train, groups_test
+
+
+def get_eligible_vessels(df, lookback, horizon, min_nb_seq= 200):
+    """Filter vessels that have enough time steps to create sequences.
+
+    An eligible sequence requires (lookback + horizon) time steps.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        DataFrame with MMSI column
+    lookback : int
+        Length of input sequence
+    horizon : int
+        Prediction horizon (already accounted for in create_target)
+    min_nb_seq : int, default=200
+        Minimum number of sequences required per vessel
+
+    Returns:
+    --------
+    list
+        List of MMSI values for eligible vessels
+    """
+    if "MMSI" not in df.columns:
+        raise ValueError("DataFrame must contain 'MMSI' column")
+
+    #pd.Series of vessel-wise full track duration
+    track_duration = df["MMSI"].value_counts()
+
+    #pd.Series of vessel-wise number of eligible time sequences
+    nb_of_seq = np.maximum(0, track_duration - (lookback + horizon))
+
+    vessels_list = nb_of_seq[nb_of_seq > min_nb_seq].index.to_list()
+
+    if len(vessels_list) == 0:
+        print(f"Warning: No vessels found with at least {min_nb_seq} sequences")
+
+    return vessels_list
+
+
+
+def create_sliding_windows(df, lookback, vessel_list):
+    """Create sliding time windows from vessel tracks for LSTM input.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        DataFrame with MMSI, BaseDateTime, target_LAT, target_LON, and feature columns
+    lookback : int
+        Length of input sequence (number of time steps)
+    vessel_list : list
+        List of MMSI values to process
 
     Returns:
     --------
     tuple of np.ndarray
-        Two arrays:
-        - X_timeframes: shape (num_windows, size, num_features)
-        - y_timeframes: shape (num_windows, size)
+        X: shape (n_sequences, lookback, n_features)
+        y: shape (n_sequences, 2) for [LAT, LON]
     """
+    required_cols = ["MMSI", "BaseDateTime", "target_LAT", "target_LON"]
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
 
-    # le dataset a déjà le double target obtenu par shift
+    if not vessel_list:
+        raise ValueError("vessel_list cannot be empty")
 
-    # filtrer les bateaux
-    # generer la target avec le shift
+    #select df with only eligible vessels
+    df_restricted = df.loc[df["MMSI"].isin(vessel_list),:]
 
-    #
+    #make sure we're sorted by vessels and dates
+    df_sorted = df_restricted.sort_values(by=["MMSI", "BaseDateTime"], ascending=True)
 
+    X_time_sequences = [] #we'll stock time sequences there
+    y_time_sequences = []
 
-
-
-    #get a list of vessels that have been tracked for at least size time step
-    vessel_list = X.groupby('MMSI').filter(lambda x: len(x) > size)
-    print(f"Number of vessels kept: {len(vessel_list)}")
-
-    # OPTIONAL : INCLUDE A QUALITY CHECK IN CASE OF THERE ARENT ENOUGH VESSEL LEFT
-
-    #storage for the time sequences: overlapping time sequences of all vessels are appended in same list
-    X_timeframes = []
-    y_timeframes = []
-    # For each vessel, create overlapping time sequence
     for vessel in vessel_list:
 
-        vessel_X = X[""]
+        vessel_track = df_sorted.loc[df_sorted["MMSI"] == vessel,:]
+
+        for i in range(len(vessel_track) - lookback + 1):
+
+            seq = vessel_track.iloc[i: i + lookback]
+            y_seq = seq.iloc[-1][["target_LAT", "target_LON"]].values
+            X_seq = seq.drop(columns = ["target_LAT", "target_LON", "MMSI"]).values
+            X_time_sequences.append(X_seq)
+            y_time_sequences.append(y_seq)
+
+    # Convert to numpy arrays: X shape (n_sequences, lookback, n_features), y shape (n_sequences, 2)
+    X_array = np.array(X_time_sequences)
+    y_array = np.array(y_time_sequences)
+
+    if len(X_array) == 0:
+        raise ValueError("No sequences created. Check lookback and vessel_list.")
+
+    return X_array, y_array
 
 
 
+def create_LSTM_sets(df: pd.DataFrame,
+                     lookback: int,
+                     horizon: int,
+                     test_size,
+                     random_state= 273,
+                     min_nb_seq= 200):
+    """Prepare train/test sets for LSTM from AIS vessel tracking data.
+
+    Parameters:
+    -----------
+    df : pd.DataFrame
+        Preprocessed DataFrame with MMSI, BaseDateTime, LAT, LON, and features
+    lookback : int
+        Length of input sequence (time steps)
+    horizon : int
+        Prediction horizon (time steps ahead)
+    test_size : float
+        Proportion of vessels for test set (0-1)
+    random_state : int, default=273
+        Random seed for train/test split
+    min_nb_seq : int, default=200
+        Minimum sequences per vessel to be included
+
+    Returns:
+    --------
+    tuple of np.ndarray
+        X_train, y_train, X_test, y_test
+        Shapes: X (n_sequences, lookback, n_features), y (n_sequences, 2)
+    """
 
 
+    #create the target
+    df_with_target = create_target(df, horizon= horizon)
+    print(f"Created targets: {len(df_with_target)} rows remaining after shift(-{horizon})")
 
+    #split into train and test sets
+    df_train, df_test, groups_train, groups_test = vessel_train_test_split(df= df_with_target,
+                                                                           test_size= test_size,
+                                                                           random_state= random_state)
+    print(f"Train: {len(df_train)} rows, {df_train['MMSI'].nunique()} vessels | "
+          f"Test: {len(df_test)} rows, {df_test['MMSI'].nunique()} vessels")
 
+    #get lists of eligible vessels for future use
+    vessel_train = get_eligible_vessels(df_train, lookback= lookback,
+                                        horizon= horizon, min_nb_seq= min_nb_seq)
+    vessel_test = get_eligible_vessels(df_test, lookback= lookback,
+                                        horizon= horizon, min_nb_seq= min_nb_seq)
 
+    print(f"Eligible vessels: {len(vessel_train)} train, {len(vessel_test)} test")
 
-        #create sliding time windows by slicing dataframes in index number
-        for i in range(total_duration - size):
+    X_train_seq, y_train_seq = create_sliding_windows(df_train, lookback= lookback, vessel_list= vessel_train)
+    X_test_seq, y_test_seq = create_sliding_windows(df_test, lookback= lookback, vessel_list= vessel_test)
 
-            X_timeslice = X.iloc[i:i+size, :]
-            y_timeslice = y.iloc[i:i+size]
+    print(f"Final shapes - X_train: {X_train_seq.shape}, y_train: {y_train_seq.shape} | "
+          f"X_test: {X_test_seq.shape}, y_test: {y_test_seq.shape}")
 
-            X_timeframes.append(X_timeslice)
-            y_timeframes.append(y_timeslice)
-
-
-
-        print(f"created {len(X_timeframes)} time windows")
-        print(f" output is of shape {np.array(X_timeframes).shape}")
-
-        return np.array(X_timeframes), np.array(y_timeframes)
+    return X_train_seq, y_train_seq, X_test_seq, y_test_seq
