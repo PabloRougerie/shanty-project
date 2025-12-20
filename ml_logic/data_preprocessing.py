@@ -198,35 +198,47 @@ def create_target(df: pd.DataFrame, horizon: int):
 
     return df
 
-def vessel_train_test_split(df, test_size, random_state = 273):
-    """Split dataset by vessel groups to ensure no vessel appears in both train and test.
+def vessel_train_test_split(df, test_size= 0.2, val_size= 0.15, random_state = 273):
+    """Split dataset by vessel groups into train/val/test sets.
+
+    Ensures no vessel appears in multiple sets to prevent data leakage.
 
     Parameters:
     -----------
     df : pd.DataFrame
         DataFrame with MMSI column
-    test_size : float
+    test_size : float, default=0.2
         Proportion of vessels (not rows) to put in test set
+    val_size : float, default=0.15
+        Proportion of vessels from train+val to put in validation set
     random_state : int, optional
         Random seed for reproducibility
 
     Returns:
     --------
     tuple
-        (df_train, df_test, groups_train, groups_test)
+        (df_train, df_val, df_test, groups_train, groups_val, groups_test)
     """
     if "MMSI" not in df.columns:
         raise ValueError("DataFrame must contain 'MMSI' column")
 
     groups = df["MMSI"]
+
+    # First split: separate test from train+val
     gss = GroupShuffleSplit(n_splits= 1, test_size= test_size, random_state= random_state)
     for train_idx, test_idx in gss.split(df, y= None, groups= groups):
-        df_train, df_test = df.iloc[train_idx], df.iloc[test_idx]
-
-        groups_train = groups.iloc[train_idx]
+        df_train_val, df_test = df.iloc[train_idx], df.iloc[test_idx]
+        groups_train_val = groups.iloc[train_idx]
         groups_test = groups.iloc[test_idx]
 
-    return df_train, df_test, groups_train, groups_test
+    # Second split: separate train from val (on train+val subset)
+    gss = GroupShuffleSplit(n_splits= 1, test_size= val_size, random_state= random_state)
+    for train_idx, val_idx in gss.split(df_train_val, y= None, groups= groups_train_val):
+        df_train, df_val = df_train_val.iloc[train_idx], df_train_val.iloc[val_idx]
+        groups_train = groups_train_val.iloc[train_idx]
+        groups_val = groups_train_val.iloc[val_idx]
+
+    return df_train, df_val, df_test, groups_train, groups_val, groups_test
 
 
 def get_eligible_vessels(df, lookback, horizon, min_nb_seq= 200):
@@ -329,10 +341,13 @@ def create_sliding_windows(df, lookback, vessel_list):
 def create_LSTM_sets(df: pd.DataFrame,
                      lookback: int,
                      horizon: int,
-                     test_size,
+                     test_size= 0.2,
+                     val_size= 0.15,
                      random_state= 273,
                      min_nb_seq= 200):
-    """Prepare train/test sets for LSTM from AIS vessel tracking data.
+    """Prepare train/val/test sets for LSTM from AIS vessel tracking data.
+
+    Pipeline: create targets → split by vessel → filter eligible vessels → create sequences.
 
     Parameters:
     -----------
@@ -342,17 +357,19 @@ def create_LSTM_sets(df: pd.DataFrame,
         Length of input sequence (time steps)
     horizon : int
         Prediction horizon (time steps ahead)
-    test_size : float
+    test_size : float, default=0.2
         Proportion of vessels for test set (0-1)
+    val_size : float, default=0.15
+        Proportion of vessels from train+val for validation set (0-1)
     random_state : int, default=273
-        Random seed for train/test split
+        Random seed for train/val/test split
     min_nb_seq : int, default=200
         Minimum sequences per vessel to be included
 
     Returns:
     --------
     tuple of np.ndarray
-        X_train, y_train, X_test, y_test
+        X_train, y_train, X_val, y_val, X_test, y_test
         Shapes: X (n_sequences, lookback, n_features), y (n_sequences, 2)
     """
 
@@ -361,25 +378,31 @@ def create_LSTM_sets(df: pd.DataFrame,
     df_with_target = create_target(df, horizon= horizon)
     print(f"Created targets: {len(df_with_target)} rows remaining after shift(-{horizon})")
 
-    #split into train and test sets
-    df_train, df_test, groups_train, groups_test = vessel_train_test_split(df= df_with_target,
+    #split into train, val, and test sets
+    df_train, df_val, df_test, groups_train, groups_val, groups_test = vessel_train_test_split(df= df_with_target,
                                                                            test_size= test_size,
-                                                                           random_state= random_state)
+                                                                           val_size= val_size,
+                                                                            random_state= random_state)
     print(f"Train: {len(df_train)} rows, {df_train['MMSI'].nunique()} vessels | "
+          f"Val: {len(df_val)} rows, {df_val['MMSI'].nunique()} vessels | "
           f"Test: {len(df_test)} rows, {df_test['MMSI'].nunique()} vessels")
 
     #get lists of eligible vessels for future use
     vessel_train = get_eligible_vessels(df_train, lookback= lookback,
                                         horizon= horizon, min_nb_seq= min_nb_seq)
+    vessel_val = get_eligible_vessels(df_val, lookback= lookback,
+                                        horizon= horizon, min_nb_seq= min_nb_seq)
     vessel_test = get_eligible_vessels(df_test, lookback= lookback,
                                         horizon= horizon, min_nb_seq= min_nb_seq)
 
-    print(f"Eligible vessels: {len(vessel_train)} train, {len(vessel_test)} test")
+    print(f"Eligible vessels: {len(vessel_train)} train, {len(vessel_val)} val, {len(vessel_test)} test")
 
     X_train_seq, y_train_seq = create_sliding_windows(df_train, lookback= lookback, vessel_list= vessel_train)
+    X_val_seq, y_val_seq = create_sliding_windows(df_val, lookback= lookback, vessel_list= vessel_val)
     X_test_seq, y_test_seq = create_sliding_windows(df_test, lookback= lookback, vessel_list= vessel_test)
 
     print(f"Final shapes - X_train: {X_train_seq.shape}, y_train: {y_train_seq.shape} | "
+          f"X_val: {X_val_seq.shape}, y_val: {y_val_seq.shape} | "
           f"X_test: {X_test_seq.shape}, y_test: {y_test_seq.shape}")
 
-    return X_train_seq, y_train_seq, X_test_seq, y_test_seq
+    return X_train_seq, y_train_seq, X_val_seq, y_val_seq, X_test_seq, y_test_seq
