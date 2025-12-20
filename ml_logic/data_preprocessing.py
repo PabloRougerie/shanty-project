@@ -309,25 +309,44 @@ def create_sliding_windows(df, lookback, vessel_list):
     #select df with only eligible vessels
     df_restricted = df.loc[df["MMSI"].isin(vessel_list),:]
 
-    #make sure we're sorted by vessels and dates
+    #make sure we're sorted by vessels and dates: from older to more recent date
     df_sorted = df_restricted.sort_values(by=["MMSI", "BaseDateTime"], ascending=True)
+
+    # Pre-compute columns to keep for X (exclude target and MMSI)
+    cols_to_drop = required_cols
+    feature_cols = [col for col in df_sorted.columns if col not in cols_to_drop]
+
+
 
     X_time_sequences = [] #we'll stock time sequences there
     y_time_sequences = []
 
-    for vessel in vessel_list:
+    total_vessels = len(vessel_list)
+    print(f"Creating sliding windows for {total_vessels} vessels...")
 
-        vessel_track = df_sorted.loc[df_sorted["MMSI"] == vessel,:]
+    # Use groupby once instead of filtering in loop (much faster)
+    vessel_idx = 0
+    for vessel, vessel_group in df_sorted.groupby("MMSI"):
 
-        for i in range(len(vessel_track) - lookback + 1):
 
-            seq = vessel_track.iloc[i: i + lookback]
-            y_seq = seq.iloc[-1][["target_LAT", "target_LON"]].values
-            X_seq = seq.drop(columns = ["target_LAT", "target_LON", "MMSI"]).values
+        vessel_idx += 1
+        vessel_track = vessel_group[feature_cols].values  # Convert to numpy array once
+        vessel_targets = vessel_group[["target_LAT", "target_LON"]].values
+        nb_sequences_vessel = len(vessel_track) - lookback  # lookback past + 1 present = lookback+1 total
+
+        if vessel_idx % 50 == 0 or vessel_idx == total_vessels:
+            print(f"  Processing vessel {vessel_idx}/{total_vessels} (MMSI: {vessel}) - {nb_sequences_vessel} sequences")
+
+        # Vectorized sliding window creation using numpy slicing
+        # Lookback includes past time steps + current time step
+        for i in range(nb_sequences_vessel):
+            X_seq = vessel_track[i: i + lookback + 1]  # lookback past steps + current time step
+            y_seq = vessel_targets[i + lookback]  # Target from current time step (which contains future position)
             X_time_sequences.append(X_seq)
             y_time_sequences.append(y_seq)
 
     # Convert to numpy arrays: X shape (n_sequences, lookback, n_features), y shape (n_sequences, 2)
+    print(f"Converting {len(X_time_sequences)} sequences to numpy arrays...")
     X_array = np.array(X_time_sequences)
     y_array = np.array(y_time_sequences)
 
@@ -397,9 +416,17 @@ def create_LSTM_sets(df: pd.DataFrame,
 
     print(f"Eligible vessels: {len(vessel_train)} train, {len(vessel_val)} val, {len(vessel_test)} test")
 
+    print("\n=== Creating TRAIN sequences ===")
     X_train_seq, y_train_seq = create_sliding_windows(df_train, lookback= lookback, vessel_list= vessel_train)
+    print(f"✓ Train sequences created: {X_train_seq.shape[0]} sequences\n")
+
+    print("=== Creating VALIDATION sequences ===")
     X_val_seq, y_val_seq = create_sliding_windows(df_val, lookback= lookback, vessel_list= vessel_val)
+    print(f"✓ Val sequences created: {X_val_seq.shape[0]} sequences\n")
+
+    print("=== Creating TEST sequences ===")
     X_test_seq, y_test_seq = create_sliding_windows(df_test, lookback= lookback, vessel_list= vessel_test)
+    print(f"✓ Test sequences created: {X_test_seq.shape[0]} sequences\n")
 
     print(f"Final shapes - X_train: {X_train_seq.shape}, y_train: {y_train_seq.shape} | "
           f"X_val: {X_val_seq.shape}, y_val: {y_val_seq.shape} | "
