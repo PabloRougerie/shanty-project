@@ -298,6 +298,9 @@ def create_sliding_windows(df, lookback, vessel_list):
         X: shape (n_sequences, lookback, n_features)
         y: shape (n_sequences, 2) for [LAT, LON]
     """
+
+    # ====== SAFETY CHECK ======
+    # Verify required columns exist in DataFrame
     required_cols = ["MMSI", "BaseDateTime", "target_LAT", "target_LON"]
     missing = [col for col in required_cols if col not in df.columns]
     if missing:
@@ -306,49 +309,77 @@ def create_sliding_windows(df, lookback, vessel_list):
     if not vessel_list:
         raise ValueError("vessel_list cannot be empty")
 
-    #select df with only eligible vessels
-    df_restricted = df.loc[df["MMSI"].isin(vessel_list),:]
+    # ====== PREPARE DATASET ======
+    # Filter DataFrame to only eligible vessels (faster than filtering in loop)
+    df_restricted = df.loc[df["MMSI"].isin(vessel_list), :]
 
-    #make sure we're sorted by vessels and dates: from older to more recent date
+    # Sort by vessel and time: essential for correct sliding window creation
+    # Must be chronological (oldest to newest) for each vessel
     df_sorted = df_restricted.sort_values(by=["MMSI", "BaseDateTime"], ascending=True)
 
-    # Pre-compute columns to keep for X (exclude target and MMSI)
-    cols_to_drop = required_cols
+    # Identify feature columns: exclude metadata (MMSI, BaseDateTime) and targets
+    cols_to_drop = ["MMSI", "BaseDateTime", "target_LAT", "target_LON"]
     feature_cols = [col for col in df_sorted.columns if col not in cols_to_drop]
-
-
-
-    X_time_sequences = [] #we'll stock time sequences there
-    y_time_sequences = []
 
     total_vessels = len(vessel_list)
     print(f"Creating sliding windows for {total_vessels} vessels...")
 
-    # Use groupby once instead of filtering in loop (much faster)
+
+    # ====== CREATE SLIDING WINDOWS ======
     vessel_idx = 0
+    # Store pre-allocated arrays per vessel (will concatenate at the end)
+    X_arrays = []
+    y_arrays = []
+
+    # Use groupby once: iterates over vessels without filtering DataFrame each time
+    # Much faster than df.loc[df["MMSI"] == vessel] in a loop
     for vessel, vessel_group in df_sorted.groupby("MMSI"):
 
-
         vessel_idx += 1
-        vessel_track = vessel_group[feature_cols].values  # Convert to numpy array once
+
+        # Convert vessel data to numpy arrays once (faster than pandas operations in loop)
+        # vessel_track: all feature observations for this vessel, shape (n_time_steps, n_features)
+        vessel_track = vessel_group[feature_cols].values
+
+        # vessel_targets: all target positions for this vessel, shape (n_time_steps, 2)
+        # Each row contains [target_LAT, target_LON] for that time step
         vessel_targets = vessel_group[["target_LAT", "target_LON"]].values
-        nb_sequences_vessel = len(vessel_track) - lookback  # lookback past + 1 present = lookback+1 total
+
+        # Calculate number of sequences: need at least (lookback + 1) time steps per sequence
+        # Formula: if vessel has N time steps, can create (N - lookback) sequences
+        nb_sequences_vessel = len(vessel_track) - lookback
 
         if vessel_idx % 50 == 0 or vessel_idx == total_vessels:
             print(f"  Processing vessel {vessel_idx}/{total_vessels} (MMSI: {vessel}) - {nb_sequences_vessel} sequences")
 
-        # Vectorized sliding window creation using numpy slicing
-        # Lookback includes past time steps + current time step
-        for i in range(nb_sequences_vessel):
-            X_seq = vessel_track[i: i + lookback + 1]  # lookback past steps + current time step
-            y_seq = vessel_targets[i + lookback]  # Target from current time step (which contains future position)
-            X_time_sequences.append(X_seq)
-            y_time_sequences.append(y_seq)
+        # Create sliding windows: each sequence = lookback past steps + current time step
+        if nb_sequences_vessel > 0:
+            # Pre-allocate arrays for this vessel (faster than appending to Python lists)
+            # X_vessel shape: (nb_sequences, lookback+1, n_features)
+            # y_vessel shape: (nb_sequences, 2) for [LAT, LON]
+            n_features = vessel_track.shape[1]
+            X_vessel = np.empty((nb_sequences_vessel, lookback + 1, n_features))
+            y_vessel = np.empty((nb_sequences_vessel, 2))
 
-    # Convert to numpy arrays: X shape (n_sequences, lookback, n_features), y shape (n_sequences, 2)
-    print(f"Converting {len(X_time_sequences)} sequences to numpy arrays...")
-    X_array = np.array(X_time_sequences)
-    y_array = np.array(y_time_sequences)
+            # Fill arrays by slicing vessel_track: each sequence overlaps with previous one
+            for i in range(nb_sequences_vessel):
+                # X: slice from index i to i+lookback+1 (includes current time step)
+                # Shape: (lookback+1, n_features) → stored in X_vessel[i]
+                X_vessel[i] = vessel_track[i: i + lookback + 1]
+
+                # y: target is at index i+lookback (current time step, which contains future position)
+                # Shape: (2,) for [LAT, LON] → stored in y_vessel[i]
+                y_vessel[i] = vessel_targets[i + lookback]
+
+            # Store vessel arrays in list (will concatenate all vessels at the end)
+            X_arrays.append(X_vessel)
+            y_arrays.append(y_vessel)
+
+    # Concatenate all vessel arrays along axis=0 (stack vertically)
+    # Faster than np.array(list) because arrays are already allocated
+    print(f"Concatenating {len(X_arrays)} vessel arrays...")
+    X_array = np.concatenate(X_arrays, axis=0)  # Final shape: (total_sequences, lookback+1, n_features)
+    y_array = np.concatenate(y_arrays, axis=0)  # Final shape: (total_sequences, 2)
 
     if len(X_array) == 0:
         raise ValueError("No sequences created. Check lookback and vessel_list.")
