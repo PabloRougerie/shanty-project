@@ -99,8 +99,8 @@ def plot_training_history(history):
     axes[0].grid(True, alpha=0.3)
 
     #Haversine MAE
-    axes[1].plot(history.history['haversine_mae_km'], label='Train MAE')
-    axes[1].plot(history.history['val_haversine_mae_km'], label='Val MAE')
+    axes[1].plot(history.history['haversine_mae'], label='Train MAE')
+    axes[1].plot(history.history['val_haversine_mae'], label='Val MAE')
     axes[1].set_xlabel('Epoch')
     axes[1].set_ylabel('Haversine MAE (km)')
     axes[1].legend()

@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from ml_logic.metric import haversine_distance
 
-def create_time_series_features(df, target_horizon=30, rolling=False, advanced_features=False):
+def create_time_series_features(df, target_horizon=30, time_step= 10, rolling=False, advanced_features=False):
     """
     Create lagged features and target proportional to prediction horizon.
     Optionally add rolling statistics and advanced engineered features.
@@ -12,9 +12,11 @@ def create_time_series_features(df, target_horizon=30, rolling=False, advanced_f
     Parameters:
     -----------
     df : DataFrame
-        Must be resampled at 5-min intervals, sorted by MMSI and BaseDateTime
+        Must be resampled at fixed time intervals (specified by time_step), sorted by MMSI and BaseDateTime
     target_horizon : int
         Prediction horizon in minutes (30, 60, 360,..)
+    time_step : int, default=10
+        Time step interval in minutes (e.g., 5, 10, 15)
     rolling : bool, default False
         If True, add rolling statistics (mean, std) over target_horizon window
     advanced_features : bool, default False
@@ -26,8 +28,8 @@ def create_time_series_features(df, target_horizon=30, rolling=False, advanced_f
     """
     df_lag = df.copy()
 
-    # Count number of 5min steps in the time horizon
-    nb_steps = target_horizon // 5
+    # Count number of time steps in the time horizon
+    nb_steps = target_horizon // time_step
 
     #determine the number of step in the lag windows
     lag_1 = max(1,nb_steps//6) #max to ensure there's at least one step in the window
@@ -35,14 +37,14 @@ def create_time_series_features(df, target_horizon=30, rolling=False, advanced_f
     lag_3 = nb_steps #full duration of the target horizon (for symmetry)
 
     print(f"Target prediction horizon: {target_horizon} min. Number of steps: {nb_steps}")
-    print(f"Defining lag windows of {lag_1*5}min, {lag_2*5}min, {lag_3*5}min")
+    print(f"Defining lag windows of {lag_1*time_step}min, {lag_2*time_step}min, {lag_3*time_step}min")
 
     # Creating lag features
     feats = ["LAT", "LON", "SOG", "COG"]
     for feat in feats:
-        df_lag[f"{feat}_lag_{lag_1*5}min"] = df_lag.groupby("MMSI")[feat].shift(lag_1)
-        df_lag[f"{feat}_lag_{lag_2*5}min"] = df_lag.groupby("MMSI")[feat].shift(lag_2)
-        df_lag[f"{feat}_lag_{lag_3*5}min"] = df_lag.groupby("MMSI")[feat].shift(lag_3)
+        df_lag[f"{feat}_lag_{lag_1*time_step}min"] = df_lag.groupby("MMSI")[feat].shift(lag_1)
+        df_lag[f"{feat}_lag_{lag_2*time_step}min"] = df_lag.groupby("MMSI")[feat].shift(lag_2)
+        df_lag[f"{feat}_lag_{lag_3*time_step}min"] = df_lag.groupby("MMSI")[feat].shift(lag_3)
 
     # Create rolling features (BEFORE dropna/reset_index to preserve index alignment)
     if rolling:
@@ -61,7 +63,7 @@ def create_time_series_features(df, target_horizon=30, rolling=False, advanced_f
         print(f"Adding advanced engineered features")
 
          #. Rate of change (using shortest lag window)
-        df_lag["SOG_change"] = df_lag["SOG"] - df_lag[f"SOG_lag_{lag_1*5}min"]
+        df_lag["SOG_change"] = df_lag["SOG"] - df_lag[f"SOG_lag_{lag_1*time_step}min"]
 
         # 2. Geometric ratios (vessel maneuverability and stability)
         df_lag["Length_Width_ratio"] = df_lag["Length"] / df_lag["Width"]
@@ -71,13 +73,13 @@ def create_time_series_features(df, target_horizon=30, rolling=False, advanced_f
         # 3. Meandering index (trajectory complexity using longest lag window)
          #Distance travelled (theoretical from SOG)
         # SOG in knots * time in hours = distance in nautical miles, then convert to km
-        distance_travelled_nm = df_lag["SOG"] * (lag_3 * 5 / 60)  # nautical miles
+        distance_travelled_nm = df_lag["SOG"] * (lag_3 * time_step / 60)  # nautical miles
         distance_travelled_km = distance_travelled_nm * 1.852  # convert to km (1 NM = 1.852 km)
 
         # Direct distance (haversine between current and lag_3 position) in km
         direct_distance = haversine_distance(
             df_lag["LAT"], df_lag["LON"],
-            df_lag[f"LAT_lag_{lag_3*5}min"], df_lag[f"LON_lag_{lag_3*5}min"])
+            df_lag[f"LAT_lag_{lag_3*time_step}min"], df_lag[f"LON_lag_{lag_3*time_step}min"])
 
         # Meandering index: direct / travelled (1 = straight line, <1 = sinuous trajectory)
         # Use max(distance_travelled_km, 0.1) to avoid division by zero (stationary vessels)

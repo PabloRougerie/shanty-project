@@ -9,46 +9,44 @@
 
 This project aims to predict the future position of maritime vessels using AIS (Automatic Identification System) tracking data. I developed this project to determine when and how machine learning models provide added value compared to simple linear extrapolation for different prediction horizons.
 
+---
+
+## 2. Executive Summary
+
+**Core Result**: Using deep learning (LSTM) models on AIS vessel tracking data, I achieved a **45% reduction in prediction error** for 24-hour vessel position forecasts, translating to a **70% reduction in search area** for maritime operations. This means search and rescue teams can cover the same probability of success with **28,400 km² less area to search**, improving operational efficiency and reducing resource requirements.
+
+**What I Did**: I compared three approaches—simple linear extrapolation (baseline), machine learning (LightGBM), and deep learning (LSTM)—across multiple prediction horizons using 1.76 million position reports from ~1000 cargo and tanker vessels in the Gulf of Mexico (November 2024). All models use the same base features (position, speed, heading, vessel characteristics), but differ in how they incorporate temporal information: ML models use lagged values at specific time windows, while LSTM processes full time sequences.
+
+**Key Finding**: For long-term predictions (≥6 hours), deep learning outperforms both baseline and ML approaches. At 24 hours, LSTM reduces prediction error from 114 km to 62 km (45% improvement) compared to baseline, and outperforms LightGBM by 12%. For search and rescue operations, this translates to searching **28,400 km² less area** (70% reduction), improving response times and reducing operational costs.
+
+
+
+![Search Area](visualizations/search_area_uncertainty.png)
+
+*Search area uncertainty (π × MAE²) for each model across prediction horizons. Smaller areas represent better predictions for search and rescue operations.*
+
+---
+
 **Operational Context**: Accurate vessel position prediction is crucial for:
 - Maritime traffic management and collision prevention
 - Port operations optimization (arrival planning, resource allocation)
 - Search and rescue operations
 - Route planning and fuel consumption estimation
 
-**Study Area**: Gulf of Mexico, December 2024
+**Study Area**: Gulf of Mexico, November 2024
 
-![Study Area](visualizations/map.png)
+![Study Area](visualizations/ROI.png)
 
 *Geographic area selected for analysis: Gulf of Mexico*
 
 
 ### Dataset
 
-- **Source**: AIS vessel tracking data (Gulf of Mexico, December 2024)
+- **Source**: AIS vessel tracking data (Gulf of Mexico, November 2024)
 - **Vessel Types**: Cargo and Tanker vessels
-- **Time Period**: 5 days of continuous tracking
-- **Volume**: ~1 million position reports from ~1000 vessels
-- **Sampling**: Resampled to uniform 5-minute intervals
-
----
-
-## 2. Executive Summary
-
-### Data Used
-
-I analyzed AIS tracking data from ~1000 cargo and tanker vessels in the Gulf of Mexico (5 days, ~1 million position reports). The data includes vessel position, speed, heading, and physical characteristics (length, width, draft).
-
-### Key Findings
-
-**When ML becomes valuable**: Machine learning models outperform simple linear extrapolation starting at **3-4 hours** of prediction horizon. For shorter horizons, simple extrapolation is sufficient.
-
-**Real-world improvements**:
-- **14-hour predictions**: Error reduced from **43.3 km to 30.1 km** (13.2 km improvement, **30.5% reduction**)
-- **21-hour predictions**: Error reduced from **62.9 km to 44.7 km** (18.2 km improvement, **28.9% reduction**)
-
-**Search area reduction**: For search and rescue operations, a 13-18 km error reduction translates to a **~40-50% reduction in searchable area** (assuming circular search zones).
-
-**Best model**: LightGBM (optimized) provides the most consistent improvements for horizons beyond 4 hours.
+- **Time Period**: 30 days of continuous tracking (November 1-30, 2024)
+- **Volume**: ~1.76 million position reports from ~1000 vessels
+- **Sampling**: Resampled to uniform 10-minute intervals
 
 ---
 
@@ -56,53 +54,61 @@ I analyzed AIS tracking data from ~1000 cargo and tanker vessels in the Gulf of 
 
 ### 3.1 What I Tested
 
-**Models**: I compared several machine learning algorithms (Linear Regression, Ridge, Lasso, Random Forest, XGBoost, LightGBM) against a simple baseline that extrapolates vessel position assuming constant speed and heading.
+**Models**: I compared multiple approaches:
+- **Baseline**: Linear extrapolation assuming constant speed and heading
+- **Machine Learning**: Ridge Regression, LightGBM (gradient boosting)
+- **Deep Learning**: LSTM (Long Short-Term Memory) neural networks with stacked architecture
 
-**Features**: I used historical position, speed, and heading data at different time windows, plus vessel physical characteristics. I tested advanced features (rolling statistics, geometric ratios) but found they didn't improve results.
+**Features**: All models use the same base features: vessel position (LAT, LON), speed (SOG), heading (COG), and physical characteristics (length, width, draft). The difference lies in how temporal information is incorporated:
+- **ML models**: Use lagged feature values at specific time windows (e.g., position 1h ago, 3h ago, 6h ago) as separate input features
+- **LSTM models**: Process full time sequences of these features (e.g., last 2-16 hours of continuous data) as sequential input, allowing the model to learn temporal patterns directly
 
-**Optimization**: I optimized model parameters and removed 3 low-importance features, resulting in modest improvements (2-5%).
+**Optimization**:
+- **LightGBM**: Hyperparameter tuning via GridSearchCV (n_estimators, max_depth, learning_rate, min_child_samples, reg_lambda)
+- **LSTM**: Architecture optimization (stacked LSTM layers: 128→64 units), learning rate scheduling, early stopping
+- **Feature selection**: Removed 5 low-importance features for ML models
 
 ### 3.2 Results by Prediction Horizon
 
-**Short-term (< 3 hours)**: Simple linear extrapolation works best. ML models don't help here.
+**Short-term (1-3 hours)**: Simple linear extrapolation works best. Both ML and DL models underperform due to overfitting on simple linear patterns.
 
-**Medium-term (3-7 hours)**: ML models start to match then exceed baseline around 3-4 hours.
+**Medium-term (6 hours)**: Transition point where ML/DL models begin to outperform baseline:
+- **6h**: LSTM achieves 16.48 km MAE (vs 18.41 km baseline) - **10.5% improvement**
+- LightGBM achieves 16.97 km MAE - **7.8% improvement**
 
-**Long-term (7+ hours)**: ML models provide significant improvements:
-- **7 hours**: 3.1 km improvement (19% better)
-- **14 hours**: 13.2 km improvement (30.5% better)
-- **21 hours**: 18.2 km improvement (28.9% better)
-- **31 hours**: 17.2 km improvement (20.4% better)
+**Long-term (12+ hours)**: Deep learning (LSTM) provides significant improvements:
+- **12h**: LSTM 28.72 km (vs 48.23 km baseline) - **40.4% improvement** (19.5 km reduction)
+- **24h**: LSTM 62.44 km (vs 113.77 km baseline) - **45.1% improvement** (51.3 km reduction)
 
-![Model Comparison](visualizations/models_vs_baseline.png)
+![Model Performance](visualizations/model_performance_vs_horizon.png)
 
-*Comparison of ML model performance vs baseline. Positive values indicate ML models are better. The "tipping point" around 3-4 hours is clearly visible.*
+*Machine learning model performance vs prediction horizon showing baseline, Ridge, and LightGBM (tuned and untuned). The graph illustrates the transition point around 6 hours where ML models become valuable.*
 
-![Tuning Impact](visualizations/tuning_impact.png)
+![Performance Improvement](visualizations/performance_improvement_over_baseline.png)
 
-*Model performance vs prediction horizon showing baseline, Ridge, LightGBM (not tuned), and LightGBM (tuned). The graph illustrates the impact of hyperparameter tuning and the "tipping point" where ML models become valuable. (Note: Generate this image by running notebook 6)*
+*Performance improvement over baseline for LightGBM and LSTM across horizons. Positive values indicate better performance than baseline.*
 
 ### 3.3 Detailed Performance Comparison
 
-| Horizon | Baseline Error | LightGBM (optimized) Error | Improvement |
-|---------|----------------|----------------------------|-------------|
-| 1h | 1.75 km | 3.31 km | -89% (worse) |
-| 3h | 7.01 km | 7.44 km | -6% (worse) |
-| 7h | 18.55 km | 15.36 km | +17% |
-| 14h | 43.25 km | 30.08 km | +30% |
-| 21h | 62.86 km | 44.67 km | +29% |
-| 31h | 84.15 km | 66.97 km | +20% |
+| Horizon | Baseline Error | LightGBM (tuned) Error | LSTM Error | Best Model |
+|---------|----------------|------------------------|------------|------------|
+| 1h | 1.55 km | 4.76 km | 3.84 km | Baseline |
+| 6h | 18.41 km | 16.97 km | 16.48 km | LSTM (+10.5%) |
+| 12h | 48.23 km | 34.91 km | 28.72 km | LSTM (+40.4%) |
+| 24h | 113.77 km | 71.02 km | 62.44 km | LSTM (+45.1%) |
+
 
 ### 3.4 Operational Impact
 
 **Error Reduction**:
-- **14-hour predictions**: 13.2 km improvement (30.5% reduction)
-- **21-hour predictions**: 18.2 km improvement (28.9% reduction)
+- **12-hour predictions**: LSTM reduces error by 19.5 km (40.4% reduction)
+- **24-hour predictions**: LSTM reduces error by 51.3 km (45.1% reduction)
 
-**Search Area Reduction**: For search and rescue operations, reducing error by 13-18 km means:
-- **14-hour horizon**: Search area reduced from ~5,900 km² to ~2,800 km² (**~53% reduction**)
-- **21-hour horizon**: Search area reduced from ~12,400 km² to ~6,300 km² (**~49% reduction**)
-
+**Search Area Reduction**: For search and rescue operations, reducing error translates to massive search area savings:
+- **6-hour horizon**: LSTM reduces search area from 1,064 km² to 853 km² (**19.9% reduction**, 211 km² saved)
+- **12-hour horizon**: LSTM reduces search area from 7,308 km² to 2,592 km² (**64.5% reduction**, 4,716 km² saved)
+- **24-hour horizon**: LSTM reduces search area from 40,666 km² to 12,250 km² (**69.9% reduction**, 28,416 km² saved)
+- **Total across all horizons**: LSTM reduces total search area by **67.9%** (33,305 km² saved) compared to baseline
 
 ---
 
@@ -110,17 +116,14 @@ I analyzed AIS tracking data from ~1000 cargo and tanker vessels in the Gulf of 
 
 ### Challenges and Limitations
 
-- **Short-term predictions**: ML models don't help for horizons < 3 hours. Simple extrapolation is sufficient.
-- **Feature engineering**: Advanced features (rolling statistics, geometric ratios) didn't improve results. The base feature set is already optimal.
-- **Limited optimization gains**: Hyperparameter tuning provided modest improvements (2-5%), suggesting default parameters were already close to optimal.
+- **Short-term predictions**: ML/DL models don't help for horizons < 6 hours. Simple extrapolation is sufficient and optimal.
+- **Feature engineering**: Advanced features (rolling statistics, geometric ratios) didn't improve ML results. The base feature set is already optimal.
+- **LSTM limitations**:
+  - Requires more computational resources and longer training times
+  - Tested different sample sizes (100k/30k vs 200k/60k) and resampling intervals (10min vs 15min) without performance improvement
+  - Current configuration (200k/60k samples, 10min resampling) provides best results
 - **Trajectory complexity**: Results are based on open-ocean trajectories. Near ports and harbors, trajectory complexity increases significantly.
-- **Horizon-specific tuning**: Model tuning was done at a single horizon (8 hours). Optimal parameters may vary by prediction horizon.
-
-### Future Work
-
-- Integrate weather data and traffic density for context-aware predictions
-- Test sequence models (LSTM/RNN) for highly non-linear trajectories
-- Optimize parameters for each prediction horizon individually
+- **Horizon-specific tuning**: Model tuning was done at specific horizons. Optimal parameters may vary by prediction horizon.
 
 ---
 
@@ -130,11 +133,21 @@ I analyzed AIS tracking data from ~1000 cargo and tanker vessels in the Gulf of 
 
 **Baseline Model**: I implemented linear extrapolation using current position, speed, and heading, assuming constant motion.
 
-**Data Processing**: I cleaned the data, resampled to 5-minute intervals, and imputed missing values.
+**Data Processing**:
+- Cleaned the data, resampled to 10-minute intervals, and imputed missing values
+- For LSTM: Created sequences with variable lookback periods (2h for 1h horizon, 6h for 6h horizon, 12h for 12h horizon, 16h for 24h horizon)
+- Used vessel-based train/validation/test splits to ensure generalization
 
-**Models Tested**: I evaluated Linear Regression, Ridge, Lasso, Random Forest, XGBoost, and LightGBM. I excluded Lasso and Random Forest due to poor performance (Lasso: 70-100 km errors) and instability (Random Forest: high variance across random states).
+**Models Tested**:
+- **ML**: Linear Regression, Ridge, Lasso, Random Forest, XGBoost, LightGBM
+  - Excluded Lasso and Random Forest due to poor performance (Lasso: 70-100 km errors) and instability (Random Forest: high variance across random states)
+- **DL**: LSTM with stacked architecture (128→64 units), GaussianNoise regularization, Dropout layers, Adam optimizer with Huber loss
 
-**Evaluation**: I used train/test split by vessel to ensure generalization and avoid vessel data leakage. I performed cross-validation with vessel groups. Metric: Haversine distance MAE in kilometers.
+**Evaluation**:
+- Used train/test split by vessel to ensure generalization and avoid vessel data leakage
+- Performed cross-validation with vessel groups for ML models
+- Metric: Haversine distance MAE in kilometers
+- LSTM evaluated on separate test set with same vessel split as ML models
 
 **Stability Testing**: I validated results across multiple random seeds to ensure robustness. I tested key horizons with different random states, confirming stable performance patterns.
 
@@ -144,4 +157,13 @@ I analyzed AIS tracking data from ~1000 cargo and tanker vessels in the Gulf of 
 
 ## Conclusion
 
-I found that machine learning models provide meaningful operational value for vessel position prediction at horizons beyond 3-4 hours. My optimized LightGBM model reduces prediction error by **13-18 km** (20-30% improvement) at 14-21 hour horizons, translating to **~50% reduction in searchable area** for search and rescue operations. For shorter horizons, simple linear extrapolation remains the best approach.
+I found that **deep learning (LSTM) models provide the best performance** for vessel position prediction at horizons ≥6 hours, with substantial improvements over both baseline and machine learning approaches.
+
+**Key insights**:
+- **Baseline is optimal** for short-term predictions (1-3h)
+- **LSTM dominates** on longer horizons (≥6h), outperforming LightGBM by 2.9-17.7%
+- **Transition point** occurs around 6 hours where ML/DL models begin to outperform baseline
+
+**Model selection trade-off**: While LSTM provides the best accuracy for long-term predictions, LightGBM offers a compelling alternative with significantly lower computational requirements and faster inference times. For applications where real-time predictions or resource constraints are priorities, LightGBM's 28-38% improvement over baseline at 12-24h horizons (vs LSTM's 40-45%) may represent a better balance between performance and operational feasibility.
+
+For shorter horizons, simple linear extrapolation remains the best approach. For operational applications requiring predictions beyond 6 hours, LSTM provides the most accurate solution, though LightGBM remains a practical alternative when computational efficiency is a concern.

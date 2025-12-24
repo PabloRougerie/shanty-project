@@ -10,6 +10,7 @@ import os
 
 
 from sklearn.model_selection import GroupShuffleSplit
+from sklearn.preprocessing import RobustScaler
 
 
 
@@ -94,7 +95,14 @@ def download_source_files(start_date: str, end_date, lon_west, lon_east, lat_nor
     df_merged = pd.concat(dataframes, ignore_index=True, axis= 0)
     raw_dir_path = Path(output_path) / "raw"
     raw_dir_path.mkdir(parents=True, exist_ok=True)
-    parquet_merged_filename = raw_dir_path / "AIS_merged.parquet"
+
+    # Create descriptive filename with bounding box coordinates and date range
+    # Format coordinates: lon{west}to{east}_lat{south}to{north}
+    # Format dates: {start_date}to{end_date} (YYYYMMDD)
+    coords_str = f"lon{lon_west:.1f}to{lon_east:.1f}_lat{lat_south:.1f}to{lat_north:.1f}"
+    dates_str = f"{start_date.strftime('%Y%m%d')}to{end_date.strftime('%Y%m%d')}"
+    parquet_merged_filename = raw_dir_path / f"AIS_merged_{coords_str}_{dates_str}.parquet"
+
     df_merged.to_parquet(parquet_merged_filename, index= False)
 
     #clean tem files
@@ -436,6 +444,7 @@ def create_LSTM_sets(df: pd.DataFrame,
     print(f"Train: {len(df_train)} rows, {df_train['MMSI'].nunique()} vessels | "
           f"Val: {len(df_val)} rows, {df_val['MMSI'].nunique()} vessels | "
           f"Test: {len(df_test)} rows, {df_test['MMSI'].nunique()} vessels")
+    print(f"group_train: {groups_train}")
 
     #get lists of eligible vessels for future use
     vessel_train = get_eligible_vessels(df_train, lookback= lookback,
@@ -464,3 +473,85 @@ def create_LSTM_sets(df: pd.DataFrame,
           f"X_test: {X_test_seq.shape}, y_test: {y_test_seq.shape}")
 
     return X_train_seq, y_train_seq, X_val_seq, y_val_seq, X_test_seq, y_test_seq
+
+
+def reshape_helper(X: np.ndarray, fit=False, scaler = RobustScaler()):
+    """Helper function to scale 3D LSTM sequences.
+
+    Reshapes 3D array to 2D for scaling, then reshapes back to preserve sequence structure.
+
+    Parameters:
+    -----------
+    X : np.ndarray
+        3D array of shape (n_sequences, seq_length, n_features)
+    fit : bool, default=False
+        If True, fit scaler on data. If False, only transform
+    scaler: sklearn scaler (default, Robust Scaler)
+
+    Returns:
+    --------
+    np.ndarray
+        Scaled array with same shape as input
+    """
+
+    print(f"Scaling dataset of shape {X.shape}...")
+
+    # Reshape to 2D: (n_sequences * seq_length, n_features) for scaling
+    X_2D = X.reshape(-1, X.shape[-1])
+
+    if fit:
+        # Fit scaler on data (for training set)
+        scaler.fit(X_2D)
+
+    # Transform data
+    X_2D_sc = scaler.transform(X_2D)
+
+    # Reshape back to original 3D shape
+    X_sc = X_2D_sc.reshape(X.shape)
+
+    return X_sc
+
+
+
+def scale_LSTM_data(X_train: np.ndarray,
+                    X_val: np.ndarray = None,
+                    X_test: np.ndarray = None):
+    """Scale LSTM input sequences using RobustScaler.
+
+    Scales training set (fit + transform) and optionally validation/test sets (transform only).
+    Reshapes 3D arrays to 2D for scaling, then reshapes back to preserve sequence structure.
+
+    Parameters:
+    -----------
+    X_train : np.ndarray
+        Training sequences, shape (n_sequences, seq_length, n_features)
+    X_val : np.ndarray, optional
+        Validation sequences, shape (n_sequences, seq_length, n_features)
+    X_test : np.ndarray, optional
+        Test sequences, shape (n_sequences, seq_length, n_features)
+
+    Returns:
+    --------
+    tuple
+        (X_train_scaled, X_val_scaled, X_test_scaled)
+        Returns None for sets not provided
+    """
+    # Initialize return values (None if sets not provided)
+    X_val_scaled = None
+    X_test_scaled = None
+
+    # Scale training set (fit scaler on this) with RobustScaler (by default in reshape_helper)
+    print(f"Scaling train set, shape {X_train.shape}")
+    X_train_scaled = reshape_helper(X_train, fit=True)
+
+    # Scale validation set if provided (transform only, using scaler fitted on train)
+    if X_val is not None:
+        X_val_scaled = reshape_helper(X_val, fit=False)
+        print(f"Scaling val set, shape {X_val.shape}")
+
+    # Scale test set if provided (transform only, using scaler fitted on train)
+    if X_test is not None:
+        X_test_scaled = reshape_helper(X_test, fit=False)
+        print(f"Scaling test set, shape {X_test.shape}")
+
+    return X_train_scaled, X_val_scaled, X_test_scaled

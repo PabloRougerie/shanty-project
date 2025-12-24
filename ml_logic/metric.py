@@ -112,8 +112,8 @@ class HaversineMAE(tf.keras.metrics.Metric):
     #constructor for instantiation
     def __init__(self, name= "HaversineMAE", **kwargs): #pass all possible arguments from parent class
 
-
         super().__init__(name= name, **kwargs) #inherit the constructor from parent class
+
         #sum of individual MAE (by batch?)
         self.total = self.add_weight(name= "total", initializer= "zeros")
         #count of number of elements (or batch?)
@@ -122,21 +122,33 @@ class HaversineMAE(tf.keras.metrics.Metric):
     #called after each batch, calculate haversine MAE for this batch and store
     def update_state(self, y_true, y_pred, sample_weight= None):
 
-        #target in shape (n, 2) where 0 is LAT, 1 is LON
-        lat1 = y_true[:, 0]* 0.0174533 #conversion degree to radian (180 = pi rad)
-        lon1 = y_true[:,1]* 0.0174533
-        lat2 = y_pred[:,0]* 0.0174533
-        lon2 = y_pred[:,1]* 0.0174533
+        # Extract LAT and LON from y_true and y_pred (shape: (batch_size, 2))
+        # Column 0 = LAT, Column 1 = LON (in degrees, not scaled)
+        lat1 = y_true[:, 0]  # True latitude in degrees
+        lon1 = y_true[:, 1]  # True longitude in degrees
+        lat2 = y_pred[:, 0]  # Predicted latitude in degrees
+        lon2 = y_pred[:, 1]  # Predicted longitude in degrees
 
-        #haversine formula
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        a = tf.sin(dlat/2)**2 + tf.cos(lat1) * tf.cos(lat2) * tf.sin(dlon/2)**2
+        # Convert degrees to radians
+        deg2rad = tf.constant(np.pi / 180.0, dtype=tf.float32)
+        lat1_rad = lat1 * deg2rad
+        lon1_rad = lon1 * deg2rad
+        lat2_rad = lat2 * deg2rad
+        lon2_rad = lon2 * deg2rad
+
+        # Calculate differences in radians
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+
+        # Haversine formula
+        a = tf.sin(dlat/2)**2 + tf.cos(lat1_rad) * tf.cos(lat2_rad) * tf.sin(dlon/2)**2
+        a = tf.clip_by_value(a, 0.0, 1.0) #safety for edge cases
         c = 2 * tf.asin(tf.sqrt(a))
-        distance = 6371 * c
+        distance = 6371 * c  # Distance in kilometers
 
         #sum all distances from the current batch and do a cumulative sum with the previous total
         self.total.assign_add(tf.reduce_sum(distance)) #tf equivalent of +=
+        #
         self.count.assign_add(tf.cast(tf.size(distance), tf.float32)) #nb of element and cast it to a float32 format
 
     #return MAE, can be called after each batch for display or each epoch for looging
