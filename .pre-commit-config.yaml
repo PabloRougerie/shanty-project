@@ -1,0 +1,10 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.15
+    hooks:
+      - id: ruff-format
+        args: [--config=pyproject.toml]
+        files: ^(src|scripts|tests)/
+      - id: ruff-check
+        args: [--fix, --config=pyproject.toml]
+        files: ^(src|scripts|tests)/

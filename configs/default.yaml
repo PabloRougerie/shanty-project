@@ -1,0 +1,49 @@
+random_seed: 273
+resample_interval_min: 10
+
+split_ratios:
+  train: 0.70
+  val: 0.15
+  test: 0.15
+
+# v3: lookback 12h + max horizon 72h @ 10 min resample (72 + 432 steps).
+min_track_steps: 504
+
+# Fixed lookback for all horizons (NB03/NB07).
+lookback_minutes: 720
+nb_lags: 6
+
+feature_columns:
+  - Length
+  - Width
+  - Draft
+  - dx
+  - dy
+
+ingestion:
+  start_date: "2024-11-01"
+  end_date: "2024-11-30"
+  bounding_box:
+    lon_west: -95.0
+    lon_east: -77.2
+    lat_south: 22.5
+    lat_north: 29.5
+
+# Prediction grid (single model g(features, h)). All horizons share lookback_minutes above.
+horizons:
+  - name: "2h"
+    minutes: 120
+  - name: "6h"
+    minutes: 360
+  - name: "8h"
+    minutes: 480
+  - name: "10h"
+    minutes: 600
+  - name: "12h"
+    minutes: 720
+  - name: "24h"
+    minutes: 1440
+  - name: "48h"
+    minutes: 2880
+  - name: "72h"
+    minutes: 4320

@@ -1,0 +1,65 @@
+# Data files (raw AIS data is too large for git)
+data/raw/
+data/processed/
+data/temp/
+
+# Training artifacts (regenerable)
+artifacts/*
+*.csv
+
+# Streamlit demo (local only, not published)
+UI/
+
+# Temporary UI tooling notebook (local only)
+notebooks/demo_mmsi_selection.ipynb
+
+# Notebook analytical outputs (data-science scratch, not package code)
+notebooks/outputs/
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.conda/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+
+# Logs
+*.log
+logs/
+# Pytest cache
+.pytest_cache/
+.coverage
+htmlcov/
+# MyPy cache
+.mypy_cache/
+.dmypy.json
+dmypy.json
