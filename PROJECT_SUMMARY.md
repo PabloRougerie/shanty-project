@@ -1,6 +1,6 @@
 # Vessel trajectory forecasting for maritime search and rescue - Project Summary
 
-**Repo**: [github.com/PabloRougerie](https://github.com/PabloRougerie) · **Demo**: _link to fill in_
+**Repo**: [github.com/PabloRougerie/shanty-project](https://github.com/PabloRougerie/shanty-project)
 
 ---
 
@@ -10,13 +10,13 @@
 
 Ships broadcast their position through AIS (Automatic Identification System), a radio system most commercial vessels are required to run. When a ship stops sending that signal, the people responsible for it lose track of where it is.
 
-This matters beyond emergencies. A ship that goes silent may simply have a technical problem while still moving normally: knowing where it likely is stays useful for safety and situational awareness, not only once a rescue is underway.
+This matters beyond emergencies. A ship that goes silent may simply have a technical problem while still moving normally, so knowing where it likely is stays useful for safety and situational awareness before and during a rescue.
 
-Without a filed route or a known destination to assume, on the ship's own recent movement forward is one of the only usable estimate of where it has gone. Assuming a simple "keep going the way you were going" guess functions as the operational floor for this task: whatever more complex prediction model must do better than that, with the little amount of data available in the AIS when in was stil transmitting.
+Without a filed route or a known destination, the ship's own recent movement is one of the only usable ways to estimate where it went. A simple "keep going the way you were going" guess is the operational floor for this task: any more complex model has to beat that guess, working from the little information AIS carries while the ship was still transmitting.
 
 ### Requirements
 
-The end user is a maritime coordination center. To be useful, the tool has to hand over a sized, circular search area around the predicted position, not an open-ended corridor stretching along every route the ship could have taken. A sized area tells searchers roughly how big a zone to cover and gives them a sense of how confident the estimate is.The larger the area, the less confident a model is about its position forecast. 
+The end user is a maritime coordination center. To be useful, the tool has to return a sized, circular search area around the predicted position, rather than an open-ended corridor stretching along every route the ship could have taken. A sized area tells searchers how large a zone to cover and conveys how confident the estimate is: the larger the area, the less certain the forecast.
 
 Beyond that, the tool needs to:
 - work for any horizon, from a couple of hours to three days, without being rebuilt for each one,
@@ -25,60 +25,64 @@ Beyond that, the tool needs to:
 
 ### Key Outcomes
 
-- One prediction model that covers every waiting time from 2 hours to 3 days: no separate model to retrain or maintain per horizon.
-- The tool shrinks the search area by **60% at short horizon, growing to 82% for the longest horizon tested** (3 days), which is when the search area is largest and a reduction matters most.
-- The tool provides a 90% confidence disk. Checked on data it never trained on, that holds up well overall, though for the fastest-moving ships over the longest horizon the true share is a bit lower than announced (about 86%, not the full 90%).
+- One prediction model covers every waiting time from 2 hours to 3 days: no separate model to retrain or maintain per horizon.
+- The tool shrinks the search area by **60% at short horizon, growing to 82% at the longest horizon tested** (3 days), which is when the search area is largest and a reduction matters most.
+- The tool returns a 90% confidence disk. Checked on data it never trained on, that holds up well overall, though for the fastest-moving ships over the longest horizon the true share is a bit lower than announced (about 86%, not the full 90%).
+
+![One maneuvering vessel at 72h horizon, close-up: model vs baseline search disks](visualizations/map_model_vs_baseline_closeup.png)
+
+*One maneuvering vessel, 72h horizon (close-up). Green dot: true position. Purple disk: model search area. Orange disk: baseline search area. Black line: observed past track; grey line: observed future track (unknown at present; shown for context). Illustrative case, not fleet average.*
 
 ### Deliverable
 
-- A model that predicts a ship's position at the requested waiting time, together with a matching search radius around that point.
-- A demo interface (UI) showing the prediction on a set of real, representative ship tracks.
+A model that predicts a ship's position at the requested waiting time, together with a matching search radius around that point, calibrated so the disk holds the true position about 90% of the time.
 
 ### Important insights
 
-- A ship's movement over time falls into a few recognizable patterns: sitting still, sailing in a straight line, or maneuvering (turning, changing speed). The longer the horizon before the prediction, the more likely the ship has switched between these patterns during that time, which is what makes long waits harder to predict.
-- For short horizon forecast of ships moving in a straight line, a simple guess based on the ship's last known course and speed already works very well.
-- The model built for this project does not do much better than that simple guess on those easy cases. Its value shows up on the harder ones: it strongly reduces the size of the worst-case errors, the rare but very large misses that would otherwise force a huge search area.
-- It is not possible to tell, from a ship's past movement alone, whether the simple guess or the model will do better for that specific ship, because that depends on what the ship does next during the wait itself, which cannot be known in advance. What does help is adjusting the search disk to the ship's past speed, something that we found bringing more accurate prediction area.
+- A ship's movement over time falls into a few recognizable patterns: sitting still, sailing in a straight line, or maneuvering (turning, changing speed). The longer the horizon, the more likely the ship has switched between these patterns during the wait, which is what makes long horizons harder to predict.
+- For short-horizon forecasts of ships moving in a straight line, a simple guess based on the ship's last known course and speed already works very well.
+- The model does not do much better than that simple guess on those easy cases. Its value is on the harder ones: it strongly reduces the size of the worst-case errors, the rare but very large misses that would otherwise force a huge search area.
+- From a ship's past movement alone, there is no way to tell whether the simple guess or the model will do better for that specific ship, because that depends on what the ship does next during the wait, which cannot be known in advance. What does help is sizing the search disk from the ship's past speed, which produces a more honest search area.
 
 ---
 
 ## Repo structure
 
 ```
-shanty_project/
-├── configs/                  # default.yaml (horizons, lookback, split), demo_vessels.yaml (UI vessel list)
-├── src/vessel_tracker/       # package: preprocessing, features, baseline, evaluation, calibration, metrics, paths
+shanty-project/
+├── configs/                  # default.yaml: horizons, lookback, split ratios, ingestion bbox, seed
+├── src/vessel_tracker/       # installable package: preprocessing, features, baseline,
+│                             #   evaluation, calibration, metrics, config, paths
 ├── scripts/
-│   ├── preprocess.py         # ingest → clean → resample → split
-│   ├── train.py              # single LGBM + R90 lookups (lgbm + baseline) → artifacts/models/
-│   ├── evaluate_test.py      # held-out test scoring, lgbm vs baseline → artifacts/reports/
-│   └── _internal/
-│       └── build_demo_bundle.py   # static UI bundle (logs + model + lookup)
-├── notebooks/                # NB01-NB07, narrative analysis, source of truth for methods
+│   ├── preprocess.py         # ingest -> clean -> resample -> split
+│   ├── train.py              # single LGBM + R90 lookups (lgbm + baseline) -> artifacts/
+│   └── evaluate_test.py      # held-out test scoring, lgbm vs baseline -> artifacts/
+├── notebooks/                # NB01-NB07, the analytical narrative (see below)
 ├── tests/                    # pytest suite (package + script plumbing)
-├── docs/                     # PACKAGE_API
-├── data/
-│   ├── raw/                  # downloaded AIS (gitignored)
-│   ├── processed/            # cleaned splits (gitignored)
-│   └── output/                # cached notebook results (CSV/parquet), source of the numbers below
-├── artifacts/
-│   ├── models/                # lgbm_final.pkl, lgbm_final.metadata.json, r90_lookup_lgbm/baseline.parquet (generated)
-│   ├── reports/                # test_report.json (generated)
-│   └── demo_bundle/            # curated logs + copies for the UI (generated)
-├── UI/                        # Streamlit demo app
-└── visualizations/             # figures referenced from this document
+├── visualizations/           # figures referenced from this document
+├── pyproject.toml / uv.lock  # package + pinned dependencies
+└── .github/workflows/ci.yml  # ruff + pytest on every push
 ```
+
+Data (`data/`) and generated artifacts (`artifacts/`) are git-ignored, kept out of the repo for size. The pipeline is fully specified and the package is tested, but a fresh clone cannot rerun it end to end without first downloading the source AIS data.
+
+---
+
+## Notebooks
+
+The seven notebooks (NB01 to NB07) are the analytical core of the project: the full path from raw data to final model, with the reasoning and the trade-offs shown at each step. They cover ingestion and dataset preparation, cleaning and exploration, the choice of baseline, the progression from linear to non-linear models, feature engineering and selection, and the final test evaluation with uncertainty calibration. They are meant to be read in order, as the science behind the packaged result.
+
+The notebooks have already been run; they are written to be read, not re-executed. Re-running them requires downloading the source AIS data first and then takes real time, since it includes model fits and hyperparameter searches. The numbers cited in this document come from these notebooks.
 
 | Notebook | Focus | Outcome |
 |---|---|---|
-| NB01 | Framing, metrics, ingestion | Scope fixed: AIS-only, cargo/tanker, Gulf of Mexico, November 2024. Raw load 7,532,915 rows / 2,441 vessels. |
-| NB02 | Cleaning, resampling, split, EDA | Cleaning: 7,532,915 → 6,167,266 rows, 2,441 → 2,200 vessels. After resampling and a minimal-length filter: 3,661,057 rows / 2,173 vessels. Vessel-level 70/15/15 split (train 1,521 / val 326 / test 326), no shared vessel. |
-| NB03 | Deterministic baselines | Constant-velocity extrapolation kept as baseline; lookback fixed at 12h for every horizon and every later model. Quadratic extrapolation strictly underperformed. |
-| NB04 | Linear models (Ridge) | Ridge improves MAE over baseline (~13% at 48-72h) and roughly halves the R90 search area from 12h on, but has a heavier worst-case tail; the ceiling motivates a non-linear model. |
-| NB05 | Non-linear models (LGBM) | LGBM has lower MAE and lower R90 than both baseline and Ridge at every horizon; retained as the model. |
+| NB01 | Framing, metrics, ingestion | Scope fixed: AIS-only, cargo/tanker, Gulf of Mexico, November 2024. Builds a single raw dataset from NOAA's per-day files, with a caching layer so already-downloaded days are not re-fetched. |
+| NB02 | Cleaning, resampling, split, EDA | Sets the cleaning policy (cause-matched handling of missing and corrupt values), produces a synchronized, cleaned dataset on a fixed time step, and characterizes vessel trajectories into behavior patterns. Vessel-level 70/15/15 split with no shared vessel. |
+| NB03 | Deterministic baselines | Constant-velocity extrapolation kept as the baseline. Numerical extrapolations track well at short horizons but their errors grow steeply at long horizons. Lookback fixed at 12h for every horizon and every later model. |
+| NB04 | Linear models (Ridge) | A linear model improves overall accuracy over the baseline but collapses on the hardest cases, with a heavier worst-case tail. Neither more history nor stronger regularization closes that gap, which motivates a non-linear model. |
+| NB05 | Non-linear models (LGBM) | A single LGBM gives up a little on the low-error tracks but drastically reduces the errors on the high-error tracks, where the search area is set. Lower MAE and lower R90 than both baseline and Ridge at every horizon; retained as the model. |
 | NB06 | Feature engineering & selection | Lookback displacement (`dx`, `dy`) carries nearly all the engineered gain; ablation retains lags + `dx`/`dy` + vessel geometry. |
-| NB07 | Final test evaluation & calibration | Test-set confirmation of the OOF gains; conditional radius R(p, h, speed) built on a held-out split and checked on test. |
+| NB07 | Final test evaluation & calibration | On the held-out test set, LGBM beats the baseline at every horizon, cutting the search area by 60.5% at 2h to 81.5% at 72h. A speed-conditioned confidence radius, built on a held-out split and checked on test, corrects the fleet-wide radius's miscalibration by speed. |
 
 ---
 
@@ -88,7 +92,9 @@ shanty_project/
 
 **Dataset.** NOAA AIS position reports for cargo and tanker vessels (type codes 70-89), Gulf of Mexico, November 2024, filtered to that bounding box and vessel type at ingestion. Raw: 7,532,915 position reports, 2,441 vessels.
 
-<!-- FIGURE: visualizations/gulf_map.png - study area (NOAA AIS, Gulf of Mexico, November 2024) -->
+![Study area: NOAA AIS, Gulf of Mexico, November 2024](visualizations/gulf_map.png)
+
+*Study area. NOAA AIS, Gulf of Mexico, November 2024.*
 
 **Why this dataset.** Public and free, dense enough over one region and one month to support a held-out test split by vessel, and restricted to two vessel types with broadly comparable dynamics (no fishing boats or pleasure craft), which keeps the underlying kinematics reasonably homogeneous.
 
@@ -96,49 +102,63 @@ shanty_project/
 
 **Metrics.**
 - Haversine MAE (km): ranks models against each other.
-- R(p, h): the p-th percentile of the haversine error distribution at horizon h. R(90,5) = x means "90% of prediction error at horizon 5h are below 5km".  This is a descriptive statistic about past errors, not automatically a coverage guarantee for a new case; Notebook 07 checks it against held-out data.
-- External reference: the IAMSAR 10 nautical mile (18.5 km) default immediate-search radius for *drifting* vessels, used as a fixed benchmark.
+- R(p, h): the p-th percentile of the haversine error at horizon h. R(90, 5h) = 5 km means "90% of the prediction errors at a 5h horizon are below 5 km". This is a descriptive statistic about past errors, not automatically a coverage guarantee for a new case; NB07 checks it against held-out data.
+- External reference: the IAMSAR 10 nautical mile (18.5 km) default immediate-search radius for drifting vessels. Used only as an order-of-magnitude anchor for what a search radius looks like in practice, not as a target to beat. The comparison that matters throughout is model versus baseline.
 
-**Cleaning** [overall, incompréhensible pour qqn qui a pas lu le notebook. il faut etre plus général du genre "encoder en nan les encodage "bizarre" de nan dans le dataset basé sur recherhce internet, vitesse interpolé jusqu'uà un point] (Notebook 02), applied in this order, each step reported so the attrition [pa compris] is traceable: drop exact duplicate rows; median-impute vessel dimensions (Length, Width, Draft) where missing, since each field's missing values are sentinel-encoded [pa compris et c pas un terme que j'utiliserais] and concentrated on vessels with no dimension data at all, ruling out a per-vessel median; gap-limited linear interpolation of speed over gaps under 30 minutes; drop `COG` (recoverable from the LAT/LON sequence, and its missingness concentrates on a handful of vessels, so keeping the column would cost more vessels than dropping it); a two-pass filter flagging any inter-ping speed above 50 knots, which separates isolated GPS glitches (the single bad ping is dropped) from two vessels sharing one identifier (the whole vessel is dropped if jumps persist on the second pass) [il faut etre un peu plus narraitf: on a vu des jump de vitese aberrante indiquent 2 vaisseux sur une meme track ou gps glitch]; drop any remaining rows with missing values. Net effect: 7,532,915 to 6,167,266 rows, 2,441 to 2,200 vessels. The GPS-jump filter alone accounts for 626,526 rows and 161 vessels of that drop.
+**Cleaning.** AIS is a messy real-world feed, and the goal at this stage was to handle missing and corrupt values deliberately rather than apply one blanket rule. The treatment was matched to the cause of each problem:
 
-Resampled to a fixed 10-minute step, then filtered to vessels with at least 2 hours of track [on s'en fout] (the shortest horizon used downstream): 3,661,057 rows, 2,173 vessels. Split by vessel, 70/15/15 (train 1,521 / val 326 / test 326 vessels), so no vessel appears in more than one split [important]. The test set is untouched until NB07.
+- **Non-standard missing values.** Several fields encode "missing" with sentinel values rather than a true null, identified from the AIS field conventions. These were converted to proper missing values first, so nothing downstream mistook a placeholder for real data.
+- **Interpolation where continuity is physical, imputation where it is not.** Short speed gaps (under 30 minutes) were linearly interpolated, since a vessel's speed is continuous over a short window. Vessel dimensions (Length, Width, Draft), which are static attributes rather than time series, were median-imputed where missing.
+- **A custom de-duplication step.** Beyond exact duplicate rows, the data contained a subtler issue: a single MMSI (vessel identifier) sometimes carried two physically distinct tracks, revealed by implausible speed jumps between consecutive pings. A two-pass filter separates an isolated GPS glitch (drop the single bad ping) from a genuine identifier collision (drop the whole vessel when the jumps persist). Treating both as the same kind of error would have corrupted either the tracks or the vessel count.
+
+Net effect: 7,532,915 to 6,167,266 rows, 2,441 to 2,200 vessels.
+
+Resampled to a fixed 10-minute step, then filtered to vessels with enough track to support the horizons used downstream: 3,661,057 rows, 2,173 vessels. **Split by vessel, 70/15/15 (train 1,521 / val 326 / test 326 vessels), so no vessel appears in more than one split.** The test set is untouched until NB07.
 
 ### Vessel behavior analysis
 
-Track shapes in the training set fall into three patterns: stationary,  straight-line transit, and maneuvering (turning, changing speed). At the case level in the final test evaluation, close to half the population is stationary (47%), 35% straight, 18% maneuvering (NB07 §5).
+Track shapes in the training set fall into three patterns: stationary, straight-line transit, and maneuvering (turning, changing speed). At the case level in the final test evaluation, close to half the population is stationary (47%), 35% straight, 18% maneuvering (NB07 §5).
 
-<!-- FIGURE: visualizations/tracks_examples.png - sample of train-set vessel tracks illustrating the three patterns (NB02 §8.1) -->
+![Sample train-set tracks: stationary, straight-line, maneuvering](visualizations/tracks_examples.png)
 
-Widening the observation window shifts that mix: straightness decreases slightly and the speed distribution changes, so a longer window is more likely to contain a mix of patterns than a single one. Working hypothesis: prediction difficulties comes from the changes between pattern during the horizon window, not by the duration of the window per se.
+*Sample train-set tracks illustrating the three patterns: stationary, straight-line, maneuvering (NB02 §8.1).*
+
+Widening the observation window shifts that mix: straightness decreases and the speed distribution changes, so a longer window is more likely to contain a mix of patterns than a single one. Working hypothesis: prediction difficulty comes from the vessel changing pattern during the horizon, not from the length of the window itself.
 
 ### Model selection
 
-**Target: velocity, not position.** The model predicts a velocity vector (`vx`, `vy`, degrees per minute) and the future position is reconstructed as present position plus velocity times horizon [math formula would be easier to understand]. 
+**Target: velocity, not position.** The model predicts a velocity vector and the future position is reconstructed from it:
 
-Predicting speed vector rather than position was selected because: 
-- it stays comparable with baseline, which compute the same quantity
-- it performs better on boundaries: a zero horizon returns the present position with no special case
-- the scale of prediction is more similar across horizon: a prediction at short horizon and a long horizon necessarily would have to predict latitude and longitude of differente values, whereas predicting the speed is more invariant to h. [je me suis mal exprimé là, à améliorer]
+```
+position(t + h) = position(t) + v * h
+```
 
-**Baseline: constant-velocity extrapolation.** Assumes the vessel holds its current course and speed. Tested across five lookback windows (1 to 24h) and a horizon grid up to 72h (NB03): a short lookback is marginally better for the baseline itself, but the project fixes 12h for every horizon and every later model, trading a small, bounded loss in baseline accuracy for one shared preprocessing pipeline and more history available to later, learned models. A quadratic extrapolation (fitting curvature explicitly over the lookback) was tested and strictly underperformed the linear version: the future position is not a simple geometric continuation of the recent track shape, which motivates a learned model.
+with `v = (vx, vy)` the predicted velocity in degrees per minute and `h` the horizon in minutes.
 
-**Linear model (Ridge).** A Ridge regression on the base features (position lags) modestly improved MAE over the baseline at long horizons (about 13% at 48-72h, slightly negative at 2h) and roughly halved the R90 search area from 12h on. The baseline kept a lower median error, and Ridge's own worst-case error at 72h reached 9,422 km, against 5,538 km for the baseline: a heavier extreme tail than the baseline itself. Testing many more lags (up to 72) and a longer lookback did not close that gap; the ceiling looked informational, a limit on what a global linear map of the features can express (the L2 penalty is a reasonable choice given the correlation between lag features, though regularization strength was not itself the limiting factor). That ceiling motivated testing a non-linear model.
+Predicting velocity rather than position was chosen because:
+- it stays directly comparable with the baseline, which produces the same quantity,
+- it behaves cleanly at the boundary: a zero horizon returns the present position with no special case,
+- the quantity to predict stays on a similar scale across horizons. A position target would range over very different latitude and longitude values at 2h versus 72h, whereas the velocity a model has to output is far less sensitive to the horizon.
 
-**Non-linear model (LightGBM).** A single LGBM regressor has lower MAE than both the baseline and Ridge at every horizon, and the margin over the baseline grows with horizon (about 6% at 2h to about 38% at 72h). On the error tail (R90), LGBM is lowest at every horizon; on the median (R50), the baseline stays lowest through short and medium horizons, since a large share of tracks are stationary or straight, where constant-velocity extrapolation is close to exact by construction. LGBM was retained as the final model.
+**Baseline: constant-velocity extrapolation.** Assumes the vessel holds its current course and speed. Tested across five lookback windows (1 to 24h) and a horizon grid up to 72h (NB03). A short lookback is marginally better for the baseline itself, but the project fixes 12h for every horizon and every later model, trading a small, bounded loss in baseline accuracy for one shared preprocessing pipeline and more history available to the learned models. A second-order extrapolation that fits the curve of the recent track was also tested and did worse than the straight-line version: the future position is not a simple geometric continuation of the recent track shape, which motivates a learned model.
 
-**Why not a sequential model (LSTM/RNN).** Not tested. Stopping at LGBM was a simplicity call: its gain over the baseline covered the project's need, and a lighter model is preferable once it does. 
+**Linear model (Ridge).** A Ridge regression on the base features (position lags) modestly improved MAE over the baseline at long horizons (about 13% at 48-72h, slightly negative at 2h) and roughly halved the R90 search area from 12h on. The baseline kept a lower median error, and Ridge's own worst-case error at 72h reached 9,422 km against the baseline's 5,538 km: a heavier extreme tail than the baseline itself. More lags (up to 72) and a longer lookback did not close that gap; the ceiling looked informational, a limit on what a global linear map of the features can express (L2 is a reasonable choice given the correlation between lag features, and regularization strength was not the limiting factor). That ceiling motivated a non-linear model.
+
+**Non-linear model (LightGBM).** A single LGBM regressor has lower MAE than both the baseline and Ridge at every horizon, and the margin over the baseline grows with horizon (about 6% at 2h to about 38% at 72h). On the error tail (R90), LGBM is lowest at every horizon. On the median (R50), the baseline stays lowest through short and medium horizons, since a large share of tracks are stationary or straight, where constant-velocity extrapolation is close to exact by construction. LGBM was retained as the final model.
+
+**Why not a sequential model (LSTM/RNN).** Not tested. Stopping at LGBM was a simplicity call: its gain over the baseline covered the project's need, and a lighter model is preferable once it does.
 
 ### Model improvements and test
 
 **Hyperparameter tuning.** A narrowed grid search (probe: 24h horizon, 12h lookback, 6 lags) improved MAE by about 2.4% over untuned LGBM. Not pursued further: the ceiling looked informational, not a tuning problem.
 
-**Feature engineering.** Candidate features: the lookback displacement (`dx`, `dy`), and four local-dynamics features (curvature rate, effective speed, speed trend, recent turn rate). Adding `dx`/`dy` cut MAE by 9 to 23% depending on horizon, several times what tuning gave; the four local-dynamics features contributed nothing measurable and turned slightly negative at long horizons.
+**Feature engineering.** Candidate features: the lookback displacement (`dx`, `dy`) and four local-dynamics features (curvature rate, effective speed, speed trend, recent turn rate). Adding `dx`/`dy` cut MAE by 9 to 23% depending on horizon, several times what tuning gave; the four local-dynamics features contributed nothing measurable and turned slightly negative at long horizons.
 
-**Feature selection method: ablation, not permutation importance (decision).** The project retrains the model with one feature group removed at a time (leave-one-group-out) rather than reading feature importance inside a single fitted model.  Importance inside one fit can be misleading when features are correlated, since either one of two correlated features can look dispensable alone while the pair together carries real signal. The one correlated cluster here is vessel geometry (Length-Width at 0.93, Draft-either at 0.73), removed as one group for that reason.
+**Feature selection: ablation (leave-one-group-out).** The project retrains the model with one feature group removed at a time rather than reading feature importance inside a single fitted model. Importance inside one fit can mislead when features are correlated, since either of two correlated features can look dispensable alone while the pair together carries real signal. The one correlated cluster here is vessel geometry (Length-Width at 0.93, Draft-either at 0.73), removed as one group for that reason.
 
 **Retained feature set:** all position lags, `dx`, `dy`, vessel geometry (Length, Width, Draft), and the horizon `h`. Heading was tested and dropped: it gave a small short-horizon gain that turned slightly negative at 24h and 72h, and the intermediate lags already recover part of the same short-horizon signal.
 
-**Test-set confirmation (NB07).** LGBM has lower MAE and lower R90 than the baseline at every horizon from 2h to 72h. Search area (proportional to R90 squared) drops 60.5% at 2h and 81.5% at 72h, the gain growing with horizon. The out-of-fold to test gap stays under 3.2% on MAE and 5.3% on R90, in the same range as the baseline's own sampling drift between splits, which argues against overfitting rather than proving its absence outright. This evaluation covers 3,832,949 position-horizon rows across 304 test vessels.
+**Test-set confirmation (NB07).** LGBM has lower MAE and lower R90 than the baseline at every horizon from 2h to 72h. Search area (proportional to R90 squared) drops 60.5% at 2h and 81.5% at 72h, the gain growing with horizon. The out-of-fold to test gap stays under 3.2% on MAE and 5.3% on R90, in the same range as the baseline's own sampling drift between splits, which argues against overfitting rather than proving its absence. This evaluation covers 3,832,949 position-horizon rows across 304 test vessels (of 326 in the split).
 
 | Horizon | Baseline MAE | LGBM MAE | Baseline R90 | LGBM R90 | Search-area reduction |
 |--------:|-------------:|---------:|-------------:|---------:|----------------------:|
@@ -151,41 +171,69 @@ Predicting speed vector rather than position was selected because:
 | 48h | 225.04 | 135.01 | 753.13  | 344.65 | 79.1% |
 | 72h | 350.96 | 194.00 | 1139.44 | 489.52 | 81.5% |
 
-_All distances in km, from `notebooks/outputs/test_summary_final.csv` (NB07). Search area scales with R90 squared._
+_All distances in km, from the NB07 test-set summary (same values as `notebooks/outputs/test_summary_final.csv` when generated locally). Search area scales with R90 squared._
 
-<!-- FIGURE: visualizations/MAE_test_vs_oof.png - MAE by horizon, baseline vs LGBM, test vs out-of-fold -->
-<!-- FIGURE: visualizations/R90_test_vs_oof.png - R90 by horizon, baseline vs LGBM, test vs out-of-fold, with the 10 NM reference -->
+![MAE by horizon, baseline vs LGBM, test vs out-of-fold](visualizations/MAE_test_vs_oof.png)
 
-At 72h, LGBM's worst observed error (1,595 km) is roughly a third of the baseline's (4,914 km), and its 95th percentile (688 km) is below the baseline's 90th (1,139 km). On pooled R50 the baseline stays lower through most horizons, explained by regime: on stationary tracks (47% of test cases) the baseline is closer to the truth than LGBM on 97% of cases at 2h, down to 71% at 72h. On maneuvering tracks LGBM has lower MAE and lower R90 at every horizon, and the gap widens with horizon (MAE at 72h: 604 km baseline against 236 km LGBM). [dire explicitement du coup que LGBM ajoute de la valeur entre autre sur la limitation des erreurs catastrophique]
+*MAE by horizon, baseline vs LGBM, test vs out-of-fold.*
 
-<!-- FIGURE: visualizations/CDF_test_error.png - test-set error CDF at 2h, 24h, 72h, baseline vs LGBM -->
+![R90 by horizon, baseline vs LGBM, test vs out-of-fold](visualizations/R90_test_vs_oof.png)
+
+*R90 by horizon, baseline vs LGBM, test vs out-of-fold. Dotted gray line: IAMSAR 10 NM (18.5 km) reference only, not a model target.*
+
+The improvement is in the error tail, not the median. At 72h, LGBM's worst observed error is 1,595 km, roughly a third of the baseline's 4,914 km, and its 95th percentile (688 km) is below the baseline's 90th (1,139 km).
+
+The baseline keeps a lower median (R50) through most horizons. This is a regime effect. Stationary tracks are 47% of the test cases, and on those tracks the baseline is closer to the truth than LGBM most of the time: 97% of stationary cases at 2h, falling to 71% at 72h.
+
+On maneuvering tracks the picture reverses. LGBM has lower MAE and lower R90 at every horizon, and the gap widens with horizon (MAE at 72h: 604 km baseline against 236 km LGBM). The model gives up little on the easy majority and removes most of the catastrophic misses that set the size of a search area.
+
+![Test-set error CDF at 2h, 24h, and 72h](visualizations/CDF_test_error.png)
+
+*Test-set error distribution at 2h, 24h, 72h, baseline vs LGBM. Lower curve = smaller positioning errors.*
 
 ### Prediction confidence
 
-**Per-vessel difficulty is real and persistent.** Per-vessel MAE ranks consistently across horizons: Spearman 0.72 between 2h and 72h per-vessel MAE. The hardest decile of vessels averages 7.6 knots and 27% maneuvering cases; the easiest decile averages 0.5 knots and is 72% stationary. [ok mais ca dit quoi? qu'on a l'air de pouvoir indentifier les vx forte erreur ou basse erreur par leur speed? et donc peut etre qu'on peut jouer sur ca pour améliorer la prediction ou le rayon?]
+**Per-vessel difficulty is real, persistent, and tied to speed.** How hard a vessel is to predict ranks consistently across horizons: the per-vessel MAE has a Spearman correlation of 0.72 between 2h and 72h. That difficulty tracks speed and maneuvering. The highest-MAE decile of vessels averages 7.6 knots and 27% maneuvering cases; the lowest-MAE decile averages 0.5 knots and is 72% stationary. A vessel's past speed therefore carries real information about how predictable it is.
 
-**Effective speed relates to error, but not through a shape that supports a hard rule.** [ok mais tre plus narratif. ici on a jjuste une phrase qui decrit une fig. il faut dire ce qu'on en conclue. vitesse reliée à error mais pass d'une maniere où on peut etablir un cutoff baseline/lgbm pour routing. en revanche on doit pouvoir utiliser ca pour conditonnné l'erreur à al vitesse?] Speed's rank correlation with LGBM error falls from 0.62 at 2h to 0.20 at 72h, and at long horizons the true relationship is a U shape: error is high at the slowest deciles, lowest around the middle, and rises again at the fastest.  
-[add fig]
+**That information cannot be turned into a routing rule.** The tempting move is to send easy-looking vessels to the baseline and hard-looking ones to the model. It does not work, for two reasons.
 
-**Why routing fails and conditioning works.** [réécrire tout ca. en gros: pas de routing parceque : effective speed a pas une courbe facile à exploiter pour ca (pas de coude) et les erreurs proviennent surement de vaiseaus avec changement dramatiques dans le futur. donc un routing fondé sur le passé sans information extra (une destinaton par ex) n'est pas jouable] Sending an easy-looking vessel to the baseline and a hard-looking one to the model would require knowing in advance whether that vessel changes pattern during the horizon. That fact belongs to the unobserved futur [tournure LLM je ne dirais pas ca]. 
+First, the relationship between speed and error has no usable cutoff. It is a smooth, non-monotonic curve, not a clean threshold, and speed's rank correlation with error fades with horizon, from 0.62 at 2h to 0.20 at 72h. There is no point on that curve to split on.
 
-By contrast, we can use the relationship observe with effspide to calibrate the confidence radius: it only requires how predictable a vessel has looked so far, which the past track does carry. Replacing one fleet-wide R(90, h) with R(90, h, speed) uses effective speed as a non-linear stand-in for that predictability, tightening or widening the disk per vessel without touching the point prediction.
+Second, the large errors come from vessels that change behavior during the horizon, and whether a vessel will turn or stop mid-wait is not in its past track. Routing on past movement alone, with no external information such as a destination, cannot separate a vessel that stayed straight from one that looked straight and then turned.
 
-**Coverage, before and after conditioning.** [il faut que ce soit clair dans le parag qu'on parle ici des erreurs ou incertitude "90% coverage is really 99%, the fastest bin's is 73%" c'est vague. ] The marginal (fleet-wide) radius over-covers slow vessels and under-covers fast ones at the same time, regardless of horizon. At 2h the gap is 26 points: the slowest bin's [oarlé olutot de slowest vessels] announced 90% coverage is really 99%, the fastest bin's is 73%. The gap narrows with horizon but does not close: at 72h the fastest bin under the marginal radius is at 79.5%. 
+**The same information sizes the confidence radius.** The point prediction stays untouched; only the radius adapts. Replacing one fleet-wide R(90, h) with a speed-conditioned R(90, h, speed) uses effective speed as a stand-in for how predictable a vessel has looked so far, which the past track does carry, and widens or tightens the disk accordingly.
 
-Conditioning on speed brings every bin close to the announced 90% (the fastest bin at 72h moves from 79.5% to 86.2%), though a residual gap of a few points remains for the fastest vessels at the longest horizons, a known limit rather than one conditioning fully removes. [c le plus important faut le metter en avant] [ce paragraphe et long et en fait décrit la figure qu'il y aura. il faut resserer sur les valeurs numérique et dire (en gros) "over confident sur les fast, under confident sur les slow]
+**The fleet-wide radius is miscalibrated by speed.** A single fleet-wide radius is over-confident on fast vessels and over-cautious on slow ones at the same time, at every horizon.
 
-<!-- FIGURE: visualizations/Rmarginal vs conditional.png - marginal vs speed-conditioned R90 coverage on test -->
+At 2h the spread is 26 points: the announced 90% coverage is really 99% for the slowest vessels and 73% for the fastest. The gap narrows with horizon but does not close. The fastest vessels stay under-covered throughout, at 79.5% at 72h under the fleet-wide radius.
 
+Conditioning on speed brings every group close to the announced 90%. The fastest vessels at 72h move from 79.5% to 86.2%. A residual gap of a few points remains for the fastest vessels at the longest horizons, a known limit rather than one the method fully removes.
+
+![Fleet-wide vs speed-conditioned R90 coverage on test, by speed decile](visualizations/Rmarginal_vs_conditional.png)
+
+*Coverage of the fleet-wide vs speed-conditioned R90 on the test set, by speed decile. Dotted line: announced 90%. Conditioning pulls every group toward the announced 90%.*
 
 ---
 
-## Technical annexe [à developper, y'a surement plus à dire sur la steructure du package non? pytest, pydantic etc etc qQUE SAIS JE]
+## Technical annexe
 
-**Stack.** Python, pandas, numpy, scikit-learn (MultiOutputRegressor, GroupKFold), LightGBM. Packaged as `vessel_tracker` (src layout, editable install via `uv`). Fixed random seed (273), the same vessel split replayed identically across notebooks, cached intermediate outputs with a force-recompute switch so a notebook can be re-read without re-running every cell.
+**Model and configuration**
+- A single `MultiOutputRegressor(LGBMRegressor)` predicting `(vx, vy)`, with the horizon `h` passed as an input feature so one model serves every horizon.
+- Feature set: position lags over a fixed 12h lookback, lookback displacement `dx`/`dy`, and vessel geometry (Length, Width, Draft).
+- Hyperparameters, horizons, lookback, lag count, split ratios, and the random seed are defined in `configs/default.yaml`, not hardcoded.
 
-**"MLOps"-level decisions.** [reformuler]
-- Package code (`src/vessel_tracker/`) is separate from the narrative notebooks; the notebooks import from the package rather than redefining functions inline, so the analysis and the shippable code do not drift apart.
-- Runnable scripts reproduce the pipeline outside a notebook: `scripts/preprocess.py`, `scripts/train.py` (fit + calibration, serving artifacts only), `scripts/evaluate_test.py` (held-out test scoring, lgbm vs baseline); `scripts/_internal/build_demo_bundle.py` builds the static bundle the UI reads [pas nécessaire].
-- A pytest suite covers the package and script plumbing; CI runs pytest and ruff on every push.
-- Configuration (horizons, lookback, split ratios, random seed) is defined in `configs/default.yaml`, not hardcoded in scripts or notebooks.
+**Splitting and reproducibility**
+- 70/15/15 split by vessel (GroupKFold on MMSI): no vessel appears in more than one split, so the test set measures generalization to unseen vessels, not unseen timestamps of known vessels.
+- Fixed random seed and identical vessel split replayed across every notebook.
+- Intermediate outputs cached with a force-recompute switch, so a notebook can be re-read without rerunning every cell.
+
+**Package and code quality**
+- Stable logic lives in an installable `vessel_tracker` package (src layout, editable install via `uv`), separate from the notebooks, which import from the package rather than redefining functions inline so analysis and shippable code do not drift.
+- Configuration validated with Pydantic, separating the business parameters (the YAML values) from the config structure and types (`config.py`).
+- pytest suite over the package and script plumbing.
+- Ruff (lint and format) via pre-commit locally and again in CI; CI runs the full test suite on every push.
+
+**Pipeline**
+- `preprocess.py`: ingest, clean, resample, split.
+- `train.py`: fit the model and calibrate both R90 lookups, serving artifacts only.
+- `evaluate_test.py`: held-out test scoring, model versus baseline.
