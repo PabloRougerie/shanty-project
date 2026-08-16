@@ -16,6 +16,9 @@ notebooks/demo_mmsi_selection.ipynb
 # Notebook analytical outputs (data-science scratch, not package code)
 notebooks/outputs/
 
+# Local scratch visualization (not for publication)
+visualizations/failure.png
+
 # Python cache and compiled files
 __pycache__/
 *.pyc

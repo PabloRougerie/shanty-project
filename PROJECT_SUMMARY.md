@@ -29,9 +29,9 @@ Beyond that, the tool needs to:
 - The tool shrinks the search area by **60% at short horizon, growing to 82% at the longest horizon tested** (3 days), which is when the search area is largest and a reduction matters most.
 - The tool returns a 90% confidence disk. Checked on data it never trained on, that holds up well overall, though for the fastest-moving ships over the longest horizon the true share is a bit lower than announced (about 86%, not the full 90%).
 
-![One maneuvering vessel at 72h horizon, close-up: model vs baseline search disks](visualizations/map_model_vs_baseline_closeup.png)
+![One maneuvering vessel at a 6h horizon: model vs baseline search disks](visualizations/model_vs_baseline_6h_1.png)
 
-*One maneuvering vessel, 72h horizon (close-up). Green dot: true position. Purple disk: model search area. Orange disk: baseline search area. Black line: observed past track; grey line: observed future track (unknown at present; shown for context). Illustrative case, not fleet average.*
+*One maneuvering vessel, 6h horizon. Green dot: true position 6h later. Purple disk: model search area. Orange disk: baseline search area. Black line: observed past track; grey line: observed future track (unknown at present; shown for context). Illustrative case, not fleet average.*
 
 ### Deliverable
 
@@ -67,6 +67,7 @@ shanty-project/
 Data (`data/`) and generated artifacts (`artifacts/`) are git-ignored, kept out of the repo for size. The pipeline is fully specified and the package is tested, but a fresh clone cannot rerun it end to end without first downloading the source AIS data.
 
 ---
+
 
 ## Notebooks
 
@@ -212,6 +213,10 @@ Conditioning on speed brings every group close to the announced 90%. The fastest
 ![Fleet-wide vs speed-conditioned R90 coverage on test, by speed decile](visualizations/Rmarginal_vs_conditional.png)
 
 *Coverage of the fleet-wide vs speed-conditioned R90 on the test set, by speed decile. Dotted line: announced 90%. Conditioning pulls every group toward the announced 90%.*
+
+![One maneuvering vessel at a 72h horizon: model vs baseline search disks](visualizations/model_vs_baseline_12h.png)
+
+*One maneuvering vessel, 72h horizon. Green dot: true position 72h later. Purple disk: model search area. Orange disk: baseline search area. Black line: observed past track; grey line: observed future track (unknown at present; shown for context). Illustrative case, not fleet average.*
 
 ---
 

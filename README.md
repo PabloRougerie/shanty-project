@@ -4,9 +4,9 @@ Predicts a vessel's future position from its past AIS track and returns a calibr
 
 On the held-out test set, the model shrinks the potential localization area by about **60% at 2h**, rising to about **82% at 72h**, compared with a constant-velocity baseline (exact values: 60.5% and 81.5%; see [NB07](notebooks/07_final_model_test_evaluation.ipynb)).
 
-![One maneuvering vessel at a 72h horizon: baseline vs model search disks](visualizations/map_model_vs_baseline.png)
+![One maneuvering vessel at a 6h horizon: baseline vs model search disks](visualizations/model_vs_baseline_6h_1.png)
 
-*Illustrative case, not fleet-average behavior.* Black line: observed past track (known at present). Grey line: observed future track (unknown at present; shown for context). Black dot: track start. Blue dot: present position (last known AIS ping). Green dot: true position 72h later. Purple dot: model predicted position; purple circle: model R90 search disk. Orange dot: baseline predicted position; orange circle: baseline R90 search disk. The baseline extrapolates a straight course and places a large disk over a wide area. The model keeps a smaller disk near the true position. Aggregate performance is summarized by the reduction percentages above and the error figure below.
+*Illustrative case, not fleet-average behavior.* Black line: observed past track (known at present). Grey line: observed future track (unknown at present; shown for context). Black dot: track start. Blue dot: present position (last known AIS ping). Green dot: true position 6h later. Purple dot: model predicted position; purple circle: model R90 search disk. Orange dot: baseline predicted position; orange circle: baseline R90 search disk. The baseline extrapolates a straight course and places a large disk over a wide area. The model keeps a smaller disk near the true position. Aggregate performance is summarized by the reduction percentages above and the error figure below.
 
 ## What the package does
 
